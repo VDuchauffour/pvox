@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::client::{ClusterResource, ProxmoxClient};
@@ -165,6 +165,11 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, tx: &UnboundedSender<AppEvent>) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+            self.quit = true;
+            return;
+        }
+
         if let Some(ref modal) = self.modal {
             match modal {
                 Modal::Filter => self.handle_filter_input(key),
@@ -363,11 +368,10 @@ mod tests {
         ]);
         app.set_filter("web".to_string());
         assert_eq!(app.filtered_resources().len(), 2);
-        assert!(
-            app.filtered_resources()
-                .iter()
-                .all(|r| r.name.starts_with("web"))
-        );
+        assert!(app
+            .filtered_resources()
+            .iter()
+            .all(|r| r.name.starts_with("web")));
     }
 
     #[test]
@@ -464,6 +468,26 @@ mod tests {
         assert!(!app.quit);
         app.handle_key(KeyEvent::from(KeyCode::Char('q')), &tx);
         assert!(app.quit);
+    }
+
+    #[test]
+    fn test_ctrl_c_quits_even_with_modal_open() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::Help);
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        app.handle_key(ctrl_c, &tx);
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn test_plain_c_does_not_quit() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.handle_key(KeyEvent::from(KeyCode::Char('c')), &tx);
+        assert!(!app.quit);
     }
 
     #[test]
@@ -862,11 +886,10 @@ mod tests {
         app.set_filter("web".to_string());
         assert_eq!(app.filter, "web");
         assert_eq!(app.filtered_resources().len(), 2);
-        assert!(
-            app.filtered_resources()
-                .iter()
-                .all(|r| r.name.starts_with("web"))
-        );
+        assert!(app
+            .filtered_resources()
+            .iter()
+            .all(|r| r.name.starts_with("web")));
 
         app.set_filter("".to_string());
         assert!(app.filter.is_empty());
