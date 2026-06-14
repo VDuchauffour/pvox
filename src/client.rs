@@ -6,6 +6,7 @@ use thiserror::Error;
 pub struct ClusterResource {
     pub id: String,
     pub r#type: String,
+    #[serde(default)]
     pub name: String,
     pub node: Option<String>,
     pub status: String,
@@ -71,10 +72,7 @@ impl ProxmoxClient {
     }
 
     pub async fn fetch_resources(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
-        let url = format!(
-            "{}/api2/json/cluster/resources?type=node&type=vm&type=lxc&type=storage",
-            self.base_url
-        );
+        let url = format!("{}/api2/json/cluster/resources", self.base_url);
         let resp = self
             .client
             .get(&url)
@@ -91,7 +89,16 @@ impl ProxmoxClient {
                     .ok_or_else(|| ProxmoxError::Api("Missing data field".into()))?;
                 let resources: Vec<ClusterResource> = data
                     .iter()
-                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                    .map(|v| serde_json::from_value::<ClusterResource>(v.clone()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| ProxmoxError::Api(format!("Failed to parse resource: {e}")))?
+                    .into_iter()
+                    .map(|mut r| {
+                        if r.name.is_empty() {
+                            r.name = r.node.clone().unwrap_or_else(|| r.id.clone());
+                        }
+                        r
+                    })
                     .collect();
                 Ok(resources)
             }
@@ -409,6 +416,43 @@ mod tests {
         assert!(ct.disk.is_none());
         assert!(ct.maxdisk.is_none());
         assert!(ct.uptime.is_none());
+    }
+
+    // Proxmox omits `name` for node and sdn resources; they must still parse.
+    #[test]
+    fn test_parse_resources_without_name_field() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "cpu": 0.15, "id": "node/pve-node1", "node": "pve-node1",
+                    "status": "online", "type": "node", "level": "",
+                    "mem": 8589934592u64, "uptime": 86400, "disk": 50000000000u64,
+                    "maxcpu": 8, "maxdisk": 100000000000u64, "maxmem": 17179869184u64
+                },
+                {
+                    "id": "sdn/zones/vlan-zone", "status": "available",
+                    "type": "sdn", "plugin": "vlan"
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let resources: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterResource>(v.clone()).unwrap())
+            .map(|mut r| {
+                if r.name.is_empty() {
+                    r.name = r.node.clone().unwrap_or_else(|| r.id.clone());
+                }
+                r
+            })
+            .collect();
+
+        assert_eq!(resources.len(), 2);
+        assert_eq!(resources[0].r#type, "node");
+        assert_eq!(resources[0].name, "pve-node1");
+        assert_eq!(resources[1].r#type, "sdn");
+        assert_eq!(resources[1].name, "sdn/zones/vlan-zone");
     }
 
     fn mock_unauthorized_response() -> reqwest::StatusCode {
