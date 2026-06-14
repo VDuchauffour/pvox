@@ -275,17 +275,151 @@ fn view_label(view: &str) -> &str {
 const HEADER_HEIGHT: u16 = 7;
 
 fn render_header(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    let no_color = app.config.no_color;
-
     let [info_area, keys_area, logo_area] = Layout::horizontal([
         Constraint::Length(64),
-        Constraint::Length(32),
-        Constraint::Min(0),
+        Constraint::Length(40),
+        Constraint::Min(5),
     ])
     .areas(area);
 
     render_header_info(frame, app, info_area, theme);
     render_header_keys(frame, keys_area, theme);
+    render_header_logo(frame, app, logo_area, theme);
+}
+
+fn render_header_info(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let label_style = theme.label();
+
+    let host = app.config.host.as_deref().unwrap_or("n/a");
+    let raw_user = if app.proxmox_user.is_empty() {
+        app.config.token_id.as_deref().unwrap_or("n/a")
+    } else {
+        app.proxmox_user.as_str()
+    };
+    let user = raw_user.split('@').next().unwrap_or(raw_user);
+
+    let value_style = Style::default()
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
+
+    let fields: &[(&str, String)] = &[
+        ("Host:", host.to_string()),
+        ("Cluster:", "Proxmox VE".to_string()),
+        ("User:", user.to_string()),
+        ("P9S Rev:", env!("CARGO_PKG_VERSION").to_string()),
+        (
+            "Proxmox Rev:",
+            if app.proxmox_version.is_empty() {
+                "n/a".to_string()
+            } else {
+                app.proxmox_version.clone()
+            },
+        ),
+    ];
+
+    let label_pad = fields.iter().map(|(l, _)| l.len()).max().unwrap_or(0) + 1;
+
+    let lines: Vec<Line> = fields
+        .iter()
+        .map(|(label, value)| {
+            Line::from(vec![
+                Span::styled(format!("{label:<label_pad$}"), label_style),
+                Span::styled(value.clone(), value_style),
+            ])
+        })
+        .collect();
+
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_header_keys(frame: &mut Frame, area: Rect, theme: &Theme) {
+    let key_style = theme.key_style();
+    let label_style = Style::default()
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
+
+    let keys: &[(&str, &str)] = &[
+        ("<?>", "Help"),
+        ("</>", "Filter"),
+        ("<:>", "Command"),
+        ("<enter>", "Details"),
+        ("<s>", "Start"),
+        ("<S>", "Stop"),
+        ("<r>", "Reboot"),
+        ("<q>", "Quit"),
+    ];
+
+    const ROWS: usize = 6;
+
+    let global_key_pad = keys.iter().map(|(k, _)| k.len()).max().unwrap_or(0) + 1;
+
+    let mut col_key_pad: Vec<usize> = Vec::new();
+    let mut col_width: Vec<usize> = Vec::new();
+    let mut total_width: usize = 0;
+    let mut num_cols: usize = 0;
+
+    for col in 0.. {
+        let start = col * ROWS;
+        if start >= keys.len() {
+            break;
+        }
+        let end = ((col + 1) * ROWS).min(keys.len());
+        let col_keys = &keys[start..end];
+        let kp = col_keys.iter().map(|(k, _)| k.len()).max().unwrap_or(0) + 1;
+        let cw = kp + col_keys.iter().map(|(_, v)| v.len()).max().unwrap_or(0) + 3;
+        let needed = if num_cols == 0 {
+            cw
+        } else {
+            total_width + 3 + cw
+        };
+        if needed > area.width as usize {
+            break;
+        }
+        col_key_pad.push(kp);
+        col_width.push(cw);
+        total_width = needed;
+        num_cols += 1;
+    }
+
+    if num_cols == 0 {
+        num_cols = 1;
+        let start = 0;
+        let end = ROWS.min(keys.len());
+        let col_keys = &keys[start..end];
+        col_key_pad.push(col_keys.iter().map(|(k, _)| k.len()).max().unwrap_or(0) + 1);
+        col_width
+            .push(col_key_pad[0] + col_keys.iter().map(|(_, v)| v.len()).max().unwrap_or(0) + 3);
+    }
+
+    let cols = num_cols;
+
+    let mut lines: Vec<Line> = Vec::with_capacity(ROWS);
+
+    for row in 0..ROWS {
+        let mut spans: Vec<Span> = Vec::new();
+        for col in 0..cols {
+            let idx = col * ROWS + row;
+            if idx < keys.len() {
+                let kp = col_key_pad.get(col).copied().unwrap_or(global_key_pad);
+                spans.push(Span::styled(format!("{:<kp$}", keys[idx].0), key_style));
+                spans.push(Span::styled(keys[idx].1.to_string(), label_style));
+                if col < cols - 1 {
+                    let content_len = kp + keys[idx].1.len();
+                    let cw = col_width[col];
+                    spans.push(Span::raw(" ".repeat(cw.saturating_sub(content_len))));
+                }
+            }
+        }
+        if !spans.is_empty() {
+            lines.push(Line::from(spans));
+        }
+    }
+
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_header_logo(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let no_color = app.config.no_color;
 
     let pixel = |c: char| -> Option<Color> {
         match c {
@@ -317,76 +451,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         })
         .collect();
 
-    frame.render_widget(
-        Paragraph::new(logo_lines).alignment(Alignment::Right),
-        logo_area,
-    );
-}
-
-fn render_header_info(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
-    let label_style = theme.label();
-
-    let host = app.config.host.as_deref().unwrap_or("n/a");
-    let raw_user = if app.proxmox_user.is_empty() {
-        app.config.token_id.as_deref().unwrap_or("n/a")
-    } else {
-        app.proxmox_user.as_str()
-    };
-    let user = raw_user.split('@').next().unwrap_or(raw_user);
-
-    let value_style = Style::default()
-        .fg(Color::White)
-        .add_modifier(Modifier::BOLD);
-    let field = |label: &str, value: String| {
-        Line::from(vec![
-            Span::styled(format!("{label:<13}"), label_style),
-            Span::styled(value, value_style),
-        ])
-    };
-
-    let lines = vec![
-        field("Host:", host.to_string()),
-        field("Cluster:", "Proxmox VE".to_string()),
-        field("User:", user.to_string()),
-        field("P9S Rev:", env!("CARGO_PKG_VERSION").to_string()),
-        field(
-            "Proxmox Rev:",
-            if app.proxmox_version.is_empty() {
-                "n/a".to_string()
-            } else {
-                app.proxmox_version.clone()
-            },
-        ),
-    ];
-
-    frame.render_widget(Paragraph::new(lines), area);
-}
-
-fn render_header_keys(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let key_style = theme.key_style();
-    let label_style = Style::default()
-        .fg(Color::White)
-        .add_modifier(Modifier::BOLD);
-
-    let binding = |key: &'static str, label: &'static str| {
-        Line::from(vec![
-            Span::styled(format!("{key:<8}"), key_style),
-            Span::styled(label, label_style),
-        ])
-    };
-
-    let lines = vec![
-        binding("<?>", "Help"),
-        binding("</>", "Filter"),
-        binding("<:>", "Command"),
-        binding("<enter>", "Details"),
-        binding("<s>", "Start"),
-        binding("<S>", "Stop"),
-        binding("<r>", "Reboot"),
-        binding("<q>", "Quit"),
-    ];
-
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Paragraph::new(logo_lines).alignment(Alignment::Right), area);
 }
 
 fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
