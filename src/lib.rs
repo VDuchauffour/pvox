@@ -28,6 +28,8 @@ pub async fn run(config: Config) -> Result<()> {
 
     if let Some(ref client) = app.client {
         spawn_polling_task(tx.clone(), client.clone(), app.config.refresh_interval);
+        spawn_version_task(tx.clone(), client.clone());
+        spawn_whoami_task(tx.clone(), client.clone());
     }
 
     spawn_event_task(tx.clone());
@@ -55,6 +57,12 @@ pub async fn run(config: Config) -> Result<()> {
                     AppEvent::ClusterSnapshot(resources) => {
                         app.connected = true;
                         app.set_resources(resources);
+                    }
+                    AppEvent::VersionSnapshot(version) => {
+                        app.proxmox_version = version;
+                    }
+                    AppEvent::WhoAmiSnapshot(user) => {
+                        app.proxmox_user = user;
                     }
                     AppEvent::ApiError(err) => {
                         app.connected = false;
@@ -229,6 +237,27 @@ fn spawn_tick_task(tx: UnboundedSender<AppEvent>) {
             if tx.send(AppEvent::Tick).is_err() {
                 break;
             }
+        }
+    });
+}
+
+fn spawn_version_task(tx: UnboundedSender<AppEvent>, client: Arc<ProxmoxClient>) {
+    tokio::spawn(async move {
+        match client.fetch_version().await {
+            Ok(version) => {
+                let _ = tx.send(AppEvent::VersionSnapshot(version.version));
+            }
+            Err(_) => {
+                // Version fetch failed — field stays empty, header shows nothing
+            }
+        }
+    });
+}
+
+fn spawn_whoami_task(tx: UnboundedSender<AppEvent>, client: Arc<ProxmoxClient>) {
+    tokio::spawn(async move {
+        if let Ok(whoami) = client.fetch_whoami().await {
+            let _ = tx.send(AppEvent::WhoAmiSnapshot(whoami.username));
         }
     });
 }

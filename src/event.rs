@@ -41,6 +41,8 @@ pub enum AppEvent {
     Tick,
     Resize(u16, u16),
     ClusterSnapshot(Vec<ClusterResource>),
+    VersionSnapshot(String),
+    WhoAmiSnapshot(String),
     ApiError(String),
     LifecycleComplete(String),
     LifecycleAction(LifecycleAction),

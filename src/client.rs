@@ -3,6 +3,20 @@ use serde::Deserialize;
 use thiserror::Error;
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct PveVersion {
+    pub version: String,
+    #[serde(default)]
+    pub release: String,
+    #[serde(default)]
+    pub repoid: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WhoAmI {
+    pub username: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct ClusterResource {
     pub id: String,
     pub r#type: String,
@@ -234,6 +248,56 @@ impl ProxmoxClient {
                     .and_then(|d| d.as_str())
                     .ok_or_else(|| ProxmoxError::Api("Missing UPID in response".into()))?;
                 Ok(upid.to_string())
+            }
+            reqwest::StatusCode::UNAUTHORIZED => Err(ProxmoxError::Unauthorized),
+            reqwest::StatusCode::FORBIDDEN => Err(ProxmoxError::Forbidden),
+            _ => Err(ProxmoxError::Api(format!("HTTP {}", resp.status()))),
+        }
+    }
+
+    pub async fn fetch_version(&self) -> Result<PveVersion, ProxmoxError> {
+        let url = format!("{}/api2/json/version", self.base_url);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.auth_header)
+            .send()
+            .await?;
+
+        match resp.status() {
+            reqwest::StatusCode::OK => {
+                let body: serde_json::Value = resp.json().await?;
+                let data = body.get("data").ok_or_else(|| {
+                    ProxmoxError::Api("Missing data field in version response".into())
+                })?;
+                let version: PveVersion = serde_json::from_value(data.clone())
+                    .map_err(|e| ProxmoxError::Api(format!("Failed to parse version: {e}")))?;
+                Ok(version)
+            }
+            reqwest::StatusCode::UNAUTHORIZED => Err(ProxmoxError::Unauthorized),
+            reqwest::StatusCode::FORBIDDEN => Err(ProxmoxError::Forbidden),
+            _ => Err(ProxmoxError::Api(format!("HTTP {}", resp.status()))),
+        }
+    }
+
+    pub async fn fetch_whoami(&self) -> Result<WhoAmI, ProxmoxError> {
+        let url = format!("{}/api2/json/access/whoami", self.base_url);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.auth_header)
+            .send()
+            .await?;
+
+        match resp.status() {
+            reqwest::StatusCode::OK => {
+                let body: serde_json::Value = resp.json().await?;
+                let data = body.get("data").ok_or_else(|| {
+                    ProxmoxError::Api("Missing data field in whoami response".into())
+                })?;
+                let whoami: WhoAmI = serde_json::from_value(data.clone())
+                    .map_err(|e| ProxmoxError::Api(format!("Failed to parse whoami: {e}")))?;
+                Ok(whoami)
             }
             reqwest::StatusCode::UNAUTHORIZED => Err(ProxmoxError::Unauthorized),
             reqwest::StatusCode::FORBIDDEN => Err(ProxmoxError::Forbidden),
