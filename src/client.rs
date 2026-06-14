@@ -18,6 +18,13 @@ pub struct ClusterResource {
     pub uptime: Option<u64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RrdDataPoint {
+    pub time: u64,
+    pub cpu: Option<f64>,
+    pub mem: Option<f64>,
+}
+
 #[derive(Debug, Error)]
 pub enum ProxmoxError {
     #[error("HTTP error: {0}")]
@@ -28,6 +35,14 @@ pub enum ProxmoxError {
     Unauthorized,
     #[error("Forbidden — insufficient permissions")]
     Forbidden,
+}
+
+#[derive(Debug, Clone)]
+pub enum TaskStatus {
+    Running,
+    Completed,
+    Error,
+    Unknown(String),
 }
 
 pub struct ProxmoxClient {
@@ -86,6 +101,39 @@ impl ProxmoxClient {
         }
     }
 
+    pub async fn fetch_rrd_data(
+        &self,
+        node: &str,
+        timeframe: &str,
+    ) -> Result<Vec<RrdDataPoint>, ProxmoxError> {
+        let url = format!(
+            "{}/api2/json/nodes/{}/rrddata?timeframe={}",
+            self.base_url, node, timeframe
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.auth_header)
+            .send()
+            .await?;
+
+        match resp.status() {
+            reqwest::StatusCode::OK => {
+                let body: serde_json::Value = resp.json().await?;
+                let data = body
+                    .get("data")
+                    .and_then(|d| d.as_array())
+                    .ok_or_else(|| ProxmoxError::Api("Missing data field".into()))?;
+                let points: Vec<RrdDataPoint> = data
+                    .iter()
+                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                    .collect();
+                Ok(points)
+            }
+            _ => Err(ProxmoxError::Api(format!("HTTP {}", resp.status()))),
+        }
+    }
+
     pub async fn vm_start(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
         todo!("implemented in Task 16")
     }
@@ -106,8 +154,33 @@ impl ProxmoxClient {
         todo!("implemented in Task 16")
     }
 
-    pub async fn lxc_reboot(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
-        todo!("implemented in Task 16")
+    pub async fn check_task_status(&self, node: &str, upid: &str) -> Result<TaskStatus, ProxmoxError> {
+        let url = format!("{}/api2/json/nodes/{}/tasks/{}/status", self.base_url, node, upid);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.auth_header)
+            .send()
+            .await?;
+
+        match resp.status() {
+            reqwest::StatusCode::OK => {
+                let body: serde_json::Value = resp.json().await?;
+                let status = body
+                    .get("data")
+                    .and_then(|d| d.get("status"))
+                    .and_then(|s| s.as_str())
+                    .ok_or_else(|| ProxmoxError::Api("Missing status field".into()))?;
+
+                match status {
+                    "OK" => Ok(TaskStatus::Completed),
+                    "ERROR" => Ok(TaskStatus::Error),
+                    "running" => Ok(TaskStatus::Running),
+                    _ => Ok(TaskStatus::Unknown(status.to_string())),
+                }
+            }
+            _ => Err(ProxmoxError::Api(format!("HTTP {}", resp.status()))),
+        }
     }
 }
 
@@ -187,6 +260,66 @@ mod tests {
         assert!(vm.disk.is_none());
         assert!(vm.maxdisk.is_none());
         assert!(vm.uptime.is_none());
+    }
+
+    #[test]
+    fn test_fetch_resources_mock() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "id": "qemu/100",
+                    "type": "qemu",
+                    "name": "win10",
+                    "node": "pve",
+                    "status": "running",
+                    "cpu": 0.05,
+                    "maxcpu": 4,
+                    "mem": 2147483648u64,
+                    "maxmem": 8589934592u64
+                },
+                {
+                    "id": "lxc/200",
+                    "type": "lxc",
+                    "name": "ubuntu",
+                    "node": "pve",
+                    "status": "stopped"
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let resources: Vec<ClusterResource> = data
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+
+        assert_eq!(resources.len(), 2);
+
+        let vm = &resources[0];
+        assert_eq!(vm.id, "qemu/100");
+        assert_eq!(vm.r#type, "qemu");
+        assert_eq!(vm.name, "win10");
+        assert_eq!(vm.status, "running");
+        assert_eq!(vm.cpu, Some(0.05));
+        assert_eq!(vm.maxcpu, Some(4.0));
+        assert_eq!(vm.mem, Some(2147483648));
+        assert_eq!(vm.maxmem, Some(8589934592));
+        assert!(vm.disk.is_none());
+        assert!(vm.maxdisk.is_none());
+        assert!(vm.uptime.is_none());
+
+        let ct = &resources[1];
+        assert_eq!(ct.id, "lxc/200");
+        assert_eq!(ct.r#type, "lxc");
+        assert_eq!(ct.name, "ubuntu");
+        assert_eq!(ct.status, "stopped");
+        assert!(ct.cpu.is_none());
+        assert!(ct.maxcpu.is_none());
+        assert!(ct.mem.is_none());
+        assert!(ct.maxmem.is_none());
+        assert!(ct.disk.is_none());
+        assert!(ct.maxdisk.is_none());
+        assert!(ct.uptime.is_none());
     }
 
     fn mock_unauthorized_response() -> reqwest::StatusCode {

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::client::{ClusterResource, ProxmoxClient};
 use crate::config::Config;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -16,6 +18,39 @@ pub enum ConfirmAction {
     Reboot { node: String, vmid: u32 },
 }
 
+pub struct SparklineData {
+    pub cpu_history: Vec<u64>, // 60 points
+    pub mem_history: Vec<u64>,
+}
+
+impl SparklineData {
+    pub fn new() -> Self {
+        Self {
+            cpu_history: Vec::with_capacity(60),
+            mem_history: Vec::with_capacity(60),
+        }
+    }
+
+    pub fn push_cpu(&mut self, value: u64) {
+        if self.cpu_history.len() >= 60 {
+            self.cpu_history.remove(0);
+        }
+        self.cpu_history.push(value);
+    }
+
+    pub fn push_mem(&mut self, value: u64) {
+        if self.mem_history.len() >= 60 {
+            self.mem_history.remove(0);
+        }
+        self.mem_history.push(value);
+    }
+
+    pub fn clear(&mut self) {
+        self.cpu_history.clear();
+        self.mem_history.clear();
+    }
+}
+
 pub struct App {
     pub resources: Vec<ClusterResource>,
     pub selected_index: usize,
@@ -25,7 +60,8 @@ pub struct App {
     pub status_message: Option<String>,
     pub connected: bool,
     pub config: Config,
-    pub client: Option<ProxmoxClient>,
+    pub client: Option<Arc<ProxmoxClient>>,
+    pub pending_upids: Vec<String>,
     pub quit: bool,
 }
 
@@ -49,7 +85,8 @@ impl App {
             status_message: None,
             connected: false,
             config,
-            client,
+            client: client.map(Arc::new),
+            pending_upids: Vec::new(),
             quit: false,
         };
         app.update_display_resources();
@@ -66,6 +103,11 @@ impl App {
 
     pub fn current_resource(&self) -> Option<&ClusterResource> {
         self.selected_resource()
+    }
+
+    pub fn complete_upid(&mut self, upid: &str) {
+        self.pending_upids.retain(|u| u != upid);
+        self.status_message = Some(format!("Task completed: {}", upid));
     }
 
     pub fn update_display_resources(&mut self) {
@@ -101,6 +143,13 @@ impl App {
     pub fn set_resources(&mut self, resources: Vec<ClusterResource>) {
         self.resources = resources;
         self.update_display_resources();
+        if self.resources.is_empty() {
+            self.selected_index = 0;
+        } else {
+            self.selected_index = self
+                .selected_index
+                .min(self.display_resources.len().saturating_sub(1));
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -122,6 +171,7 @@ impl App {
             KeyCode::Down => self.select_next(),
             KeyCode::Enter => {
                 if self.current_resource().is_some() {
+                    self.sparkline_data.clear();
                     self.modal = Some(Modal::Details);
                 }
             }
