@@ -779,4 +779,89 @@ mod tests {
 
         assert_eq!(app.selected_index, 1);
     }
+
+    #[test]
+    fn test_modal_transitions() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+
+        app.modal = Some(Modal::Help);
+        assert!(matches!(app.modal, Some(Modal::Help)));
+
+        app.modal = None;
+        assert!(app.modal.is_none());
+
+        app.modal = Some(Modal::Filter);
+        assert!(matches!(app.modal, Some(Modal::Filter)));
+
+        app.modal = Some(Modal::Confirm(ConfirmAction::Stop {
+            node: "pve1".to_string(),
+            vmid: 100,
+            kind: "qemu".to_string(),
+        }));
+        assert!(matches!(app.modal, Some(Modal::Confirm(_))));
+    }
+
+    #[test]
+    fn test_keyboard_dispatch_with_modal() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+
+        app.modal = Some(Modal::Help);
+        app.quit = false;
+        app.handle_key(KeyEvent::from(KeyCode::Char('q')), &tx);
+        assert!(app.modal.is_none());
+        assert!(!app.quit);
+
+        app.modal = Some(Modal::Details);
+        app.quit = false;
+        app.handle_key(KeyEvent::from(KeyCode::Char('q')), &tx);
+        assert!(app.modal.is_none());
+        assert!(!app.quit);
+    }
+
+    #[test]
+    fn test_selected_resource_bounds() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![
+            mock_resource("vm1", "qemu", Some("pve1")),
+            mock_resource("vm2", "qemu", Some("pve1")),
+        ]);
+
+        app.selected_index = 0;
+        assert!(app.current_resource().is_some());
+        assert_eq!(app.current_resource().unwrap().name, "vm1");
+
+        app.selected_index = 1;
+        assert!(app.current_resource().is_some());
+        assert_eq!(app.current_resource().unwrap().name, "vm2");
+
+        app.selected_index = 999;
+        assert!(app.current_resource().is_none());
+    }
+
+    #[test]
+    fn test_filter_state_transition() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![
+            mock_resource("web1", "qemu", Some("pve1")),
+            mock_resource("db1", "lxc", Some("pve2")),
+            mock_resource("web2", "qemu", Some("pve2")),
+        ]);
+
+        app.set_filter("web".to_string());
+        assert_eq!(app.filter, "web");
+        assert_eq!(app.filtered_resources().len(), 2);
+        assert!(app
+            .filtered_resources()
+            .iter()
+            .all(|r| r.name.starts_with("web")));
+
+        app.set_filter("".to_string());
+        assert!(app.filter.is_empty());
+        assert_eq!(app.filtered_resources().len(), 3);
+    }
 }
