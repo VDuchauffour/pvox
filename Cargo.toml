@@ -1,6 +1,6 @@
 [package]
 name = "p9s"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 description = "A k9s-like terminal UI for Proxmox VE"
 license = "Unlicense"
