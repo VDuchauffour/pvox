@@ -1,1 +1,207 @@
-pub struct Client;
+use reqwest::Client;
+use serde::Deserialize;
+use thiserror::Error;
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ClusterResource {
+    pub id: String,
+    pub r#type: String,
+    pub name: String,
+    pub node: Option<String>,
+    pub status: String,
+    pub cpu: Option<f64>,
+    pub maxcpu: Option<f64>,
+    pub mem: Option<u64>,
+    pub maxmem: Option<u64>,
+    pub disk: Option<u64>,
+    pub maxdisk: Option<u64>,
+    pub uptime: Option<u64>,
+}
+
+#[derive(Debug, Error)]
+pub enum ProxmoxError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("API error: {0}")]
+    Api(String),
+    #[error("Unauthorized — check token")]
+    Unauthorized,
+    #[error("Forbidden — insufficient permissions")]
+    Forbidden,
+}
+
+pub struct ProxmoxClient {
+    client: Client,
+    base_url: String,
+    auth_header: String,
+}
+
+impl ProxmoxClient {
+    pub fn new(
+        host: &str,
+        token_id: &str,
+        token: &str,
+        insecure: bool,
+    ) -> Result<Self, ProxmoxError> {
+        let client = Client::builder()
+            .danger_accept_invalid_certs(insecure)
+            .build()?;
+        let base_url = host.trim_end_matches('/').to_string();
+        let auth_header = format!("PVEAPIToken={}={}", token_id, token);
+        Ok(Self {
+            client,
+            base_url,
+            auth_header,
+        })
+    }
+
+    pub async fn fetch_resources(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let url = format!(
+            "{}/api2/json/cluster/resources?type=node&type=vm&type=lxc&type=storage",
+            self.base_url
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", &self.auth_header)
+            .send()
+            .await?;
+
+        match resp.status() {
+            reqwest::StatusCode::OK => {
+                let body: serde_json::Value = resp.json().await?;
+                let data = body
+                    .get("data")
+                    .and_then(|d| d.as_array())
+                    .ok_or_else(|| ProxmoxError::Api("Missing data field".into()))?;
+                let resources: Vec<ClusterResource> = data
+                    .iter()
+                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                    .collect();
+                Ok(resources)
+            }
+            reqwest::StatusCode::UNAUTHORIZED => Err(ProxmoxError::Unauthorized),
+            reqwest::StatusCode::FORBIDDEN => Err(ProxmoxError::Forbidden),
+            _ => Err(ProxmoxError::Api(format!("HTTP {}", resp.status()))),
+        }
+    }
+
+    pub async fn vm_start(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
+        todo!("implemented in Task 16")
+    }
+
+    pub async fn vm_stop(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
+        todo!("implemented in Task 16")
+    }
+
+    pub async fn vm_reboot(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
+        todo!("implemented in Task 16")
+    }
+
+    pub async fn lxc_start(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
+        todo!("implemented in Task 16")
+    }
+
+    pub async fn lxc_stop(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
+        todo!("implemented in Task 16")
+    }
+
+    pub async fn lxc_reboot(&self, _node: &str, _vmid: u32) -> Result<String, ProxmoxError> {
+        todo!("implemented in Task 16")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_auth_header_format() {
+        let client = ProxmoxClient::new("https://pve.local:8006", "root@pam!metron", "abc123", false).unwrap();
+        assert_eq!(client.auth_header, "PVEAPIToken=root@pam!metron=abc123");
+    }
+
+    #[test]
+    fn test_parse_cluster_resources() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "id": "node/pve",
+                    "type": "node",
+                    "name": "pve",
+                    "node": "pve",
+                    "status": "online",
+                    "cpu": 0.15,
+                    "maxcpu": 8,
+                    "mem": 4294967296u64,
+                    "maxmem": 17179869184u64,
+                    "disk": 2147483648u64,
+                    "maxdisk": 10737418240u64,
+                    "uptime": 3600
+                },
+                {
+                    "id": "qemu/100",
+                    "type": "qemu",
+                    "name": "win10",
+                    "node": "pve",
+                    "status": "running",
+                    "cpu": 0.05,
+                    "maxcpu": 4,
+                    "mem": 2147483648u64,
+                    "maxmem": 8589934592u64
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let resources: Vec<ClusterResource> = data
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+
+        assert_eq!(resources.len(), 2);
+
+        let node = &resources[0];
+        assert_eq!(node.id, "node/pve");
+        assert_eq!(node.r#type, "node");
+        assert_eq!(node.name, "pve");
+        assert_eq!(node.node.as_deref(), Some("pve"));
+        assert_eq!(node.status, "online");
+        assert_eq!(node.cpu, Some(0.15));
+        assert_eq!(node.maxcpu, Some(8.0));
+        assert_eq!(node.mem, Some(4294967296));
+        assert_eq!(node.maxmem, Some(17179869184));
+        assert_eq!(node.disk, Some(2147483648));
+        assert_eq!(node.maxdisk, Some(10737418240));
+        assert_eq!(node.uptime, Some(3600));
+
+        let vm = &resources[1];
+        assert_eq!(vm.id, "qemu/100");
+        assert_eq!(vm.r#type, "qemu");
+        assert_eq!(vm.name, "win10");
+        assert_eq!(vm.status, "running");
+        assert_eq!(vm.cpu, Some(0.05));
+        assert_eq!(vm.maxcpu, Some(4.0));
+        assert_eq!(vm.mem, Some(2147483648));
+        assert_eq!(vm.maxmem, Some(8589934592));
+        assert!(vm.disk.is_none());
+        assert!(vm.maxdisk.is_none());
+        assert!(vm.uptime.is_none());
+    }
+
+    fn mock_unauthorized_response() -> reqwest::StatusCode {
+        reqwest::StatusCode::UNAUTHORIZED
+    }
+
+    #[test]
+    fn test_unauthorized_handling() {
+        let status = mock_unauthorized_response();
+        match status {
+            reqwest::StatusCode::UNAUTHORIZED => {
+                let err = ProxmoxError::Unauthorized;
+                assert_eq!(format!("{}", err), "Unauthorized — check token");
+            }
+            _ => panic!("Expected UNAUTHORIZED status code"),
+        }
+    }
+}
