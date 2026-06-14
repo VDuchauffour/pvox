@@ -27,6 +27,10 @@ pub struct Config {
     #[serde(default = "default_refresh_interval")]
     pub refresh_interval: u64,
 
+    #[arg(long, help = "Initial resource filter")]
+    #[serde(default)]
+    pub filter: Option<String>,
+
     #[arg(long, help = "Disable colors")]
     #[serde(default)]
     pub no_color: bool,
