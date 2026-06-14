@@ -1,7 +1,5 @@
+use crate::client::ClusterResource;
 use crossterm::event::KeyEvent;
-
-#[derive(Clone, Debug)]
-pub struct ClusterResource;
 
 #[derive(Clone, Debug)]
 pub enum AppEvent {
