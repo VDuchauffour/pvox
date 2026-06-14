@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize, Parser)]
+#[derive(Debug, Deserialize, Parser)]
 #[command(name = "metron", about = "A k9s-like terminal UI for Proxmox VE")]
 pub struct Config {
     #[arg(long, help = "Proxmox host URL")]
@@ -38,6 +38,21 @@ pub struct Config {
     #[arg(long, help = "Path to config file")]
     #[serde(skip)]
     pub config: Option<PathBuf>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            host: None,
+            token_id: None,
+            token: None,
+            insecure: false,
+            refresh_interval: default_refresh_interval(),
+            filter: None,
+            no_color: false,
+            config: None,
+        }
+    }
 }
 
 fn default_refresh_interval() -> u64 {
@@ -89,6 +104,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_yaml_config_parsing() {
@@ -110,16 +126,48 @@ no_color: true
     }
 
     #[test]
-    fn test_yaml_config_defaults() {
-        let yaml = r#"
-host: https://pve.local
-"#;
-        let config: Config = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(config.host, Some("https://pve.local".to_string()));
-        assert_eq!(config.token_id, None);
-        assert_eq!(config.token, None);
-        assert!(!config.insecure);
-        assert_eq!(config.refresh_interval, 5);
-        assert!(!config.no_color);
+    fn test_cli_overrides_file() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "host: https://file.example.com").unwrap();
+
+        let args = Config {
+            config: Some(tmp.path().to_path_buf()),
+            host: Some("https://cli.example.com".to_string()),
+            ..Default::default()
+        };
+
+        let cfg = args.load().unwrap();
+        assert_eq!(cfg.host, Some("https://cli.example.com".to_string()));
+    }
+
+    #[test]
+    fn test_metron_token_env_fallback() {
+        unsafe {
+            std::env::set_var("METRON_TOKEN", "env-token-123");
+        }
+
+        let args = Config {
+            token: None,
+            ..Default::default()
+        };
+
+        let cfg = args.load().unwrap();
+        assert_eq!(cfg.token, Some("env-token-123".to_string()));
+
+        unsafe {
+            std::env::remove_var("METRON_TOKEN");
+        }
+    }
+
+    #[test]
+    fn test_default_refresh_interval() {
+        let args = Config::default();
+        assert_eq!(args.refresh_interval, 5);
+    }
+
+    #[test]
+    fn test_default_insecure() {
+        let args = Config::default();
+        assert!(!args.insecure);
     }
 }

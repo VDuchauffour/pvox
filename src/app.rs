@@ -684,4 +684,99 @@ mod tests {
         assert_eq!(App::extract_vmid("node/pve"), None);
         assert_eq!(App::extract_vmid("invalid"), None);
     }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::from(KeyCode::Char(c))
+    }
+
+    fn key_code(code: KeyCode) -> KeyEvent {
+        KeyEvent::from(code)
+    }
+
+    #[test]
+    fn test_confirm_yes() {
+        let mut app = App::new(mock_config()).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::Confirm(ConfirmAction::Stop {
+            node: "pve1".to_string(),
+            vmid: 100,
+            kind: "qemu".to_string(),
+        }));
+
+        app.handle_confirm_input(
+            key('y'),
+            ConfirmAction::Stop {
+                node: "pve1".to_string(),
+                vmid: 100,
+                kind: "qemu".to_string(),
+            },
+            &tx,
+        );
+
+        assert!(app.modal.is_none());
+        assert!(app.status_message.is_some());
+    }
+
+    #[test]
+    fn test_confirm_no() {
+        let mut app = App::new(mock_config()).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::Confirm(ConfirmAction::Reboot {
+            node: "pve1".to_string(),
+            vmid: 100,
+            kind: "qemu".to_string(),
+        }));
+
+        app.handle_confirm_input(
+            key('n'),
+            ConfirmAction::Reboot {
+                node: "pve1".to_string(),
+                vmid: 100,
+                kind: "qemu".to_string(),
+            },
+            &tx,
+        );
+
+        assert!(app.modal.is_none());
+        assert!(app.status_message.is_none());
+    }
+
+    #[test]
+    fn test_filter_input_capture() {
+        let mut app = App::new(mock_config()).unwrap();
+        app.modal = Some(Modal::Filter);
+
+        app.handle_filter_input(key('w'));
+        app.handle_filter_input(key('e'));
+        app.handle_filter_input(key('b'));
+
+        assert_eq!(app.filter, "web");
+    }
+
+    #[test]
+    fn test_filter_backspace() {
+        let mut app = App::new(mock_config()).unwrap();
+        app.modal = Some(Modal::Filter);
+        app.filter = "web".to_string();
+
+        app.handle_filter_input(key_code(KeyCode::Backspace));
+
+        assert_eq!(app.filter, "we");
+    }
+
+    #[test]
+    fn test_help_modal_doesnt_block_arrows() {
+        let mut app = App::new(mock_config()).unwrap();
+        app.set_resources(vec![
+            mock_resource("a", "qemu", Some("pve1")),
+            mock_resource("b", "qemu", Some("pve1")),
+        ]);
+        app.selected_index = 1;
+
+        app.modal = Some(Modal::Help);
+
+        app.handle_help_input(key_code(KeyCode::Up));
+
+        assert_eq!(app.selected_index, 1);
+    }
 }
