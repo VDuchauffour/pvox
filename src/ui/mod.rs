@@ -1,12 +1,14 @@
 mod dialog;
 mod format;
 mod header;
+mod help;
 mod layout;
 mod overlays;
 mod table;
 
-pub use dialog::{render_command_error, render_confirm, render_details, render_help};
+pub use dialog::{render_command_error, render_confirm, render_details};
 pub use format::{format_disk, format_memory, view_label};
+pub use help::render_help;
 pub use layout::{centered_rect, command_error_rect};
 pub use overlays::{render_command, render_filter};
 use ratatui::Frame;
@@ -20,7 +22,7 @@ use crate::theme::Theme;
 pub fn render(frame: &mut Frame, app: &App) {
     let theme = Theme::from_no_color(app.config.no_color);
     match &app.modal {
-        Some(Modal::Help) => render_help(frame, &theme),
+        Some(Modal::Help) => render_help(frame, app, &theme),
         Some(Modal::Filter) => render_list(frame, app, &theme),
         Some(Modal::Command) => render_list(frame, app, &theme),
         Some(Modal::CommandError(msg)) => {

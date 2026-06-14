@@ -12,25 +12,6 @@ use crate::app::App;
 use crate::event::ConfirmAction;
 use crate::theme::Theme;
 
-/// Render the help overlay popup.
-pub fn render_help(frame: &mut Frame, theme: &Theme) {
-    let popup_area = centered_rect(60, 25, frame.area());
-    frame.render_widget(Clear, popup_area);
-    frame.render_widget(
-        Paragraph::new(
-            "Help\n\nq: quit\n?: help\n/: filter\n:: command (switch view)\n↑↓/jk: scroll\ngg: go to top\nG: go to bottom\nEnter: details\ns: start\nS: stop\nr: reboot",
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme.accent))
-                .title(Span::styled(" Help ", theme.accent_bold()))
-                .title_alignment(Alignment::Center),
-        ),
-        popup_area.inner(Margin::new(1, 1)),
-    );
-}
-
 /// Render a confirmation dialog for stop/reboot actions.
 pub fn render_confirm(frame: &mut Frame, action: &ConfirmAction, theme: &Theme) {
     let area = frame.area();
