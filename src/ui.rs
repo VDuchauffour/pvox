@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Sparkline, Table, TableState, Wrap},
     Frame,
 };
 
@@ -89,6 +89,9 @@ fn render_details(frame: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .title("Resource Details");
 
+    let inner = area.inner(Margin::new(1, 1));
+    let chunks = Layout::vertical([Constraint::Min(8), Constraint::Length(6)]).split(inner);
+
     let content = if let Some(resource) = app.current_resource() {
         match resource.r#type.as_str() {
             "qemu" | "lxc" => format_vm_details(resource),
@@ -100,12 +103,32 @@ fn render_details(frame: &mut Frame, app: &App) {
         "No resource selected".to_string()
     };
 
-    let paragraph = Paragraph::new(content)
-        .block(block)
-        .wrap(Wrap { trim: true });
-
+    let paragraph = Paragraph::new(content).wrap(Wrap { trim: true });
     frame.render_widget(Clear, area);
-    frame.render_widget(paragraph, area);
+    frame.render_widget(block.clone(), area);
+    frame.render_widget(paragraph, chunks[0]);
+
+    let sparkline_block = Block::default().borders(Borders::ALL).title("History");
+    let sparkline_inner = chunks[1].inner(Margin::new(1, 1));
+    let sparkline_chunks = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
+        .margin(1)
+        .split(sparkline_inner);
+
+    if !app.sparkline_data.cpu_history.is_empty() {
+        let cpu_sparkline = Sparkline::default()
+            .data(&app.sparkline_data.cpu_history)
+            .style(Style::default().fg(Color::Yellow));
+        frame.render_widget(cpu_sparkline, sparkline_chunks[0]);
+        let mem_sparkline = Sparkline::default()
+            .data(&app.sparkline_data.mem_history)
+            .style(Style::default().fg(Color::Cyan));
+        frame.render_widget(mem_sparkline, sparkline_chunks[1]);
+    } else {
+        let fallback =
+            Paragraph::new("No historical data available.\nReal-time values shown above.");
+        frame.render_widget(fallback, sparkline_inner);
+    }
+    frame.render_widget(sparkline_block, chunks[1]);
 }
 
 fn format_vm_details(r: &ClusterResource) -> String {
