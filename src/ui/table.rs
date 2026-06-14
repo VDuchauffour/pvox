@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Row, Table, TableState},
 };
@@ -46,7 +46,6 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
     };
 
     let widths = [
-        Constraint::Min(8),  // Type
         Constraint::Min(15), // Name
         Constraint::Min(10), // Node
         Constraint::Min(10), // Status
@@ -55,10 +54,11 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
         Constraint::Min(12), // Disk
     ];
 
-    let header = Row::new(vec![
-        "Type", "Name", "Node", "Status", "CPU%", "RAM", "Disk",
-    ])
-    .style(theme.accent_bold());
+    let header = Row::new(vec!["NAME", "NODE", "STATUS", "CPU%", "RAM", "DISK"]).style(
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    );
 
     let rows: Vec<Row> = app
         .display_resources
@@ -82,7 +82,6 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
             let disk_str = format_disk(r.disk, r.maxdisk);
 
             Row::new(vec![
-                Cell::from(r.r#type.clone()),
                 Cell::from(r.name.clone()),
                 Cell::from(r.node.clone().unwrap_or_default()),
                 Cell::from(r.status.clone()).style(status_style),
