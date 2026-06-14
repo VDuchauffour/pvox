@@ -1,6 +1,7 @@
 use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
@@ -11,8 +12,14 @@ use crate::client::ClusterResource;
 pub fn render(frame: &mut Frame, app: &App) {
     match &app.modal {
         Some(Modal::Help) => render_help(frame, app),
-        Some(Modal::Filter) => render_filter(frame, app),
-        Some(Modal::Confirm(action)) => render_confirm(frame, action, app),
+        Some(Modal::Filter) => {
+            render_list(frame, app); // Show list behind filter
+            render_filter(frame, app);
+        }
+        Some(Modal::Confirm(action)) => {
+            render_list(frame, app);
+            render_confirm(frame, action, app);
+        }
         Some(Modal::Details) => render_details(frame, app),
         None => render_list(frame, app),
     }
@@ -151,6 +158,13 @@ fn format_generic_details(r: &ClusterResource) -> String {
 
 fn render_list(frame: &mut Frame, app: &App) {
     let no_color = app.config.no_color;
+    let area = frame.area();
+    let main_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height.saturating_sub(1),
+    };
 
     let widths = [
         Constraint::Min(8),  // Type
@@ -218,7 +232,81 @@ fn render_list(frame: &mut Frame, app: &App) {
             Style::default().bg(Color::Blue).fg(Color::White)
         });
 
-    frame.render_stateful_widget(table, frame.area(), &mut table_state);
+    frame.render_stateful_widget(table, main_area, &mut table_state);
+
+    render_status_bar(frame, app);
+}
+
+fn render_status_bar(frame: &mut Frame, app: &App) {
+    let no_color = app.config.no_color;
+
+    let area = frame.area();
+    let status_area = Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(1),
+        width: area.width,
+        height: 1,
+    };
+
+    let (conn_text, conn_color) = if app.connected {
+        ("Connected", Color::Green)
+    } else {
+        ("Disconnected", Color::Red)
+    };
+
+    let selected_text = if app.display_resources.is_empty() {
+        "0/0".to_string()
+    } else {
+        format!(
+            "{}/{} ({})",
+            app.selected_index + 1,
+            app.display_resources.len(),
+            app.selected_resource()
+                .map(|r| r.r#type.clone())
+                .unwrap_or_default(),
+        )
+    };
+
+    let status_msg = app.status_message.as_deref().unwrap_or("");
+
+    let status_span = if no_color {
+        Span::raw(conn_text)
+    } else {
+        Span::styled(conn_text, Style::default().fg(conn_color))
+    };
+
+    let mut spans: Vec<Span> = vec![];
+    spans.push(Span::raw("["));
+    spans.push(status_span);
+    spans.push(Span::raw("] "));
+
+    if !status_msg.is_empty() {
+        spans.push(Span::raw(status_msg));
+    }
+
+    let view_label = match &app.modal {
+        Some(Modal::Help) => "Help",
+        Some(Modal::Filter) => "Filter",
+        Some(Modal::Confirm(_)) => "Confirm",
+        Some(Modal::Details) => "Details",
+        None => "Resources",
+    };
+
+    spans.push(Span::raw(" | "));
+    spans.push(Span::styled(
+        format!("[{}]", view_label),
+        if no_color {
+            Style::default()
+        } else {
+            Style::default().fg(Color::Yellow)
+        },
+    ));
+    spans.push(Span::raw(" "));
+    spans.push(Span::raw(selected_text));
+
+    let line = Line::from(spans);
+    let paragraph = Paragraph::new(Text::from(line));
+    frame.render_widget(paragraph, status_area);
 }
 
 fn format_memory(used: Option<u64>, total: Option<u64>) -> String {
