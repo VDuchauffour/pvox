@@ -91,10 +91,10 @@ impl Config {
         cfg.no_color = self.no_color;
 
         // METRON_TOKEN env var fallback
-        if cfg.token.is_none() {
-            if let Ok(token) = std::env::var("METRON_TOKEN") {
-                cfg.token = Some(token);
-            }
+        if cfg.token.is_none()
+            && let Ok(token) = std::env::var("METRON_TOKEN")
+        {
+            cfg.token = Some(token);
         }
 
         Ok(cfg)
@@ -103,8 +103,9 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
+    use super::*;
 
     #[test]
     fn test_yaml_config_parsing() {

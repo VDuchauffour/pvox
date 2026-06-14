@@ -234,8 +234,15 @@ impl ProxmoxClient {
         }
     }
 
-    pub async fn check_task_status(&self, node: &str, upid: &str) -> Result<TaskStatus, ProxmoxError> {
-        let url = format!("{}/api2/json/nodes/{}/tasks/{}/status", self.base_url, node, upid);
+    pub async fn check_task_status(
+        &self,
+        node: &str,
+        upid: &str,
+    ) -> Result<TaskStatus, ProxmoxError> {
+        let url = format!(
+            "{}/api2/json/nodes/{}/tasks/{}/status",
+            self.base_url, node, upid
+        );
         let resp = self
             .client
             .get(&url)
@@ -270,7 +277,9 @@ mod tests {
 
     #[test]
     fn test_auth_header_format() {
-        let client = ProxmoxClient::new("https://pve.local:8006", "root@pam!metron", "abc123", false).unwrap();
+        let client =
+            ProxmoxClient::new("https://pve.local:8006", "root@pam!metron", "abc123", false)
+                .unwrap();
         assert_eq!(client.auth_header, "PVEAPIToken=root@pam!metron=abc123");
     }
 
@@ -433,11 +442,7 @@ mod tests {
     #[tokio::test]
     async fn test_connection_refused() {
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
-        let err = client
-            .get("http://127.0.0.1:1/")
-            .send()
-            .await
-            .unwrap_err();
+        let err = client.get("http://127.0.0.1:1/").send().await.unwrap_err();
 
         assert!(err.is_connect() || err.is_request());
 
