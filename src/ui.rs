@@ -490,12 +490,10 @@ fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
 
     frame.render_stateful_widget(table, table_area, &mut table_state);
 
-    render_status_bar(frame, app, theme);
+    render_status_bar(frame, theme);
 }
 
-fn render_status_bar(frame: &mut Frame, app: &App, theme: &Theme) {
-    let no_color = app.config.no_color;
-
+fn render_status_bar(frame: &mut Frame, _theme: &Theme) {
     let area = frame.area();
     let status_area = Rect {
         x: area.x,
@@ -504,67 +502,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, theme: &Theme) {
         height: 1,
     };
 
-    let (conn_text, conn_color) = if app.connected {
-        ("Connected", theme.success)
-    } else {
-        ("Disconnected", theme.danger)
-    };
-
-    let selected_text = if app.display_resources.is_empty() {
-        "0/0".to_string()
-    } else {
-        format!(
-            "{}/{} ({})",
-            app.selected_index + 1,
-            app.display_resources.len(),
-            app.selected_resource()
-                .map(|r| r.r#type.clone())
-                .unwrap_or_default(),
-        )
-    };
-
-    let status_msg = app.status_message.as_deref().unwrap_or("");
-
-    let status_span = if no_color {
-        Span::raw(conn_text)
-    } else {
-        Span::styled(conn_text, Style::default().fg(conn_color))
-    };
-
-    let mut spans: Vec<Span> = vec![];
-    spans.push(Span::raw("["));
-    spans.push(status_span);
-    spans.push(Span::raw("] "));
-
-    if !status_msg.is_empty() {
-        spans.push(Span::raw(status_msg));
-    }
-
-    let view_label = match &app.modal {
-        Some(Modal::Help) => "Help",
-        Some(Modal::Filter) => "Filter",
-        Some(Modal::Command) => "Command",
-        Some(Modal::CommandError(_)) => "Error",
-        Some(Modal::Confirm(_)) => "Confirm",
-        Some(Modal::Details) => "Details",
-        None => view_label(&app.view),
-    };
-
-    spans.push(Span::raw(" | "));
-    spans.push(Span::styled(
-        format!("[{}]", view_label),
-        if no_color {
-            Style::default()
-        } else {
-            Style::default().fg(theme.accent)
-        },
-    ));
-    spans.push(Span::raw(" "));
-    spans.push(Span::raw(selected_text));
-
-    let line = Line::from(spans);
-    let paragraph = Paragraph::new(Text::from(line));
-    frame.render_widget(paragraph, status_area);
+    frame.render_widget(Paragraph::new(Line::from("")), status_area);
 }
 
 const PROXMOX_PIXELS: [&str; 14] = [
