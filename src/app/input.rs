@@ -46,6 +46,10 @@ impl App {
         }
 
         match key.code {
+            KeyCode::Esc if !self.filter.is_empty() => {
+                self.filter.clear();
+                self.update_display_resources();
+            }
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.modal = Some(Modal::Help),
             KeyCode::Char('/') => self.modal = Some(Modal::Filter),

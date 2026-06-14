@@ -527,6 +527,41 @@ mod tests {
     }
 
     #[test]
+    fn test_esc_resets_active_filter_in_normal_mode() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.set_resources(vec![
+            mock_resource("web1", "qemu", Some("pve1")),
+            mock_resource("db1", "qemu", Some("pve2")),
+        ]);
+
+        app.handle_key(KeyEvent::from(KeyCode::Char('/')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('w')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Enter), &tx);
+        assert!(app.modal.is_none());
+        assert_eq!(app.filter, "w");
+        assert_eq!(app.filtered_resources().len(), 1);
+
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
+        assert!(app.filter.is_empty());
+        assert_eq!(app.filtered_resources().len(), 2);
+    }
+
+    #[test]
+    fn test_esc_in_normal_mode_without_filter_is_noop() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.set_resources(vec![mock_resource("web1", "qemu", Some("pve1"))]);
+
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
+        assert!(app.filter.is_empty());
+        assert!(!app.quit);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
     fn test_confirm_modal_keys() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();

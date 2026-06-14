@@ -92,16 +92,30 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
     let mut table_state = TableState::default();
     table_state.select(Some(app.selected_index));
 
+    let title = if app.filter.is_empty() {
+        Line::from(Span::styled(
+            format!(" {} ", view_label(&app.view)),
+            theme.accent_bold(),
+        ))
+    } else {
+        Line::from(vec![
+            Span::styled(format!(" {} ", view_label(&app.view)), theme.accent_bold()),
+            Span::styled(
+                format!("</{}> ", app.filter),
+                Style::default()
+                    .fg(theme.warning)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+
     let table = Table::new(rows, widths)
         .header(header)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(theme.accent))
-                .title(Span::styled(
-                    format!(" {} ", view_label(&app.view)),
-                    theme.accent_bold(),
-                ))
+                .title(title)
                 .title_alignment(ratatui::layout::Alignment::Center)
                 .padding(ratatui::widgets::Padding::new(1, 1, 0, 0)),
         )
