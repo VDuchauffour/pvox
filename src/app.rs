@@ -62,6 +62,7 @@ pub struct App {
     pub config: Config,
     pub client: Option<Arc<ProxmoxClient>>,
     pub pending_upids: Vec<String>,
+    pub sparkline_data: SparklineData,
     pub quit: bool,
 }
 
@@ -87,6 +88,7 @@ impl App {
             config,
             client: client.map(Arc::new),
             pending_upids: Vec::new(),
+            sparkline_data: SparklineData::new(),
             quit: false,
         };
         app.update_display_resources();
