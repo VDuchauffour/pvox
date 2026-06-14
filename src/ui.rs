@@ -6,8 +6,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, ConfirmAction, Modal};
+use crate::app::{App, Modal};
 use crate::client::ClusterResource;
+use crate::event::ConfirmAction;
 
 pub fn render(frame: &mut Frame, app: &App) {
     match &app.modal {
@@ -74,8 +75,8 @@ fn render_filter(frame: &mut Frame, app: &App) {
 fn render_confirm(frame: &mut Frame, action: &ConfirmAction, _app: &App) {
     let area = frame.area();
     let msg = match action {
-        ConfirmAction::Stop { node, vmid } => format!("Stop {} on {}? (y/n)", vmid, node),
-        ConfirmAction::Reboot { node, vmid } => format!("Reboot {} on {}? (y/n)", vmid, node),
+        ConfirmAction::Stop { node, vmid, .. } => format!("Stop {} on {}? (y/n)", vmid, node),
+        ConfirmAction::Reboot { node, vmid, .. } => format!("Reboot {} on {}? (y/n)", vmid, node),
     };
     frame.render_widget(
         Paragraph::new(msg).block(Block::default().borders(Borders::ALL).title("Confirm")),

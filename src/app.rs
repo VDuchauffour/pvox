@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use crate::client::{ClusterResource, ProxmoxClient};
 use crate::config::Config;
+use crate::event::{AppEvent, ConfirmAction, LifecycleAction};
 use crossterm::event::{KeyCode, KeyEvent};
+use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone)]
 pub enum Modal {
@@ -12,14 +14,8 @@ pub enum Modal {
     Details,
 }
 
-#[derive(Debug, Clone)]
-pub enum ConfirmAction {
-    Stop { node: String, vmid: u32 },
-    Reboot { node: String, vmid: u32 },
-}
-
 pub struct SparklineData {
-    pub cpu_history: Vec<u64>, // 60 points
+    pub cpu_history: Vec<u64>,
     pub mem_history: Vec<u64>,
 }
 
@@ -71,7 +67,12 @@ impl App {
         let client = if let (Some(host), Some(token_id), Some(token)) =
             (&config.host, &config.token_id, &config.token)
         {
-            Some(ProxmoxClient::new(host, token_id, token, config.insecure)?)
+            Some(Arc::new(ProxmoxClient::new(
+                host,
+                token_id,
+                token,
+                config.insecure,
+            )?))
         } else {
             None
         };
@@ -86,7 +87,7 @@ impl App {
             status_message: None,
             connected: false,
             config,
-            client: client.map(Arc::new),
+            client,
             pending_upids: Vec::new(),
             sparkline_data: SparklineData::new(),
             quit: false,
@@ -154,11 +155,11 @@ impl App {
         }
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) {
+    pub fn handle_key(&mut self, key: KeyEvent, tx: &UnboundedSender<AppEvent>) {
         if let Some(ref modal) = self.modal {
             match modal {
                 Modal::Filter => self.handle_filter_input(key),
-                Modal::Confirm(action) => self.handle_confirm_input(key, action.clone()),
+                Modal::Confirm(action) => self.handle_confirm_input(key, action.clone(), tx),
                 Modal::Help => self.handle_help_input(key),
                 Modal::Details => self.handle_details_input(key),
             }
@@ -179,24 +180,31 @@ impl App {
             }
             KeyCode::Char('s') => {
                 if let Some(r) = self.current_resource() {
-                    self.status_message = Some(format!("Starting {}...", r.name));
+                    if let (Some(node), Some(vmid)) = (r.node.clone(), Self::extract_vmid(&r.id)) {
+                        let kind = r.r#type.clone();
+                        let _ = tx.send(AppEvent::LifecycleAction(LifecycleAction::Start {
+                            node,
+                            vmid,
+                            kind,
+                        }));
+                        self.status_message = Some(format!("Starting {}...", r.name));
+                    }
                 }
             }
             KeyCode::Char('S') => {
                 if let Some(r) = self.current_resource() {
-                    if let Some(node) = r.node.clone() {
-                        if let Some(vmid) = Self::extract_vmid(&r.id) {
-                            self.modal = Some(Modal::Confirm(ConfirmAction::Stop { node, vmid }));
-                        }
+                    if let (Some(node), Some(vmid)) = (r.node.clone(), Self::extract_vmid(&r.id)) {
+                        let kind = r.r#type.clone();
+                        self.modal = Some(Modal::Confirm(ConfirmAction::Stop { node, vmid, kind }));
                     }
                 }
             }
             KeyCode::Char('r') => {
                 if let Some(r) = self.current_resource() {
-                    if let Some(node) = r.node.clone() {
-                        if let Some(vmid) = Self::extract_vmid(&r.id) {
-                            self.modal = Some(Modal::Confirm(ConfirmAction::Reboot { node, vmid }));
-                        }
+                    if let (Some(node), Some(vmid)) = (r.node.clone(), Self::extract_vmid(&r.id)) {
+                        let kind = r.r#type.clone();
+                        self.modal =
+                            Some(Modal::Confirm(ConfirmAction::Reboot { node, vmid, kind }));
                     }
                 }
             }
@@ -238,11 +246,25 @@ impl App {
         }
     }
 
-    fn handle_confirm_input(&mut self, key: KeyEvent, _action: ConfirmAction) {
+    fn handle_confirm_input(
+        &mut self,
+        key: KeyEvent,
+        action: ConfirmAction,
+        tx: &UnboundedSender<AppEvent>,
+    ) {
         match key.code {
             KeyCode::Char('y') => {
-                self.status_message = Some("Confirming action...".to_string());
+                let lifecycle_action = match action {
+                    ConfirmAction::Stop { node, vmid, kind } => {
+                        LifecycleAction::Stop { node, vmid, kind }
+                    }
+                    ConfirmAction::Reboot { node, vmid, kind } => {
+                        LifecycleAction::Reboot { node, vmid, kind }
+                    }
+                };
+                let _ = tx.send(AppEvent::LifecycleAction(lifecycle_action));
                 self.modal = None;
+                self.status_message = Some("Action sent...".to_string());
             }
             KeyCode::Char('n') | KeyCode::Esc => {
                 self.modal = None;
@@ -431,8 +453,9 @@ mod tests {
     fn test_key_q_sets_quit() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         assert!(!app.quit);
-        app.handle_key(KeyEvent::from(KeyCode::Char('q')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('q')), &tx);
         assert!(app.quit);
     }
 
@@ -440,8 +463,9 @@ mod tests {
     fn test_key_question_opens_help_modal() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         assert!(app.modal.is_none());
-        app.handle_key(KeyEvent::from(KeyCode::Char('?')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('?')), &tx);
         assert!(matches!(app.modal, Some(Modal::Help)));
     }
 
@@ -449,8 +473,9 @@ mod tests {
     fn test_key_slash_opens_filter_modal() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         assert!(app.modal.is_none());
-        app.handle_key(KeyEvent::from(KeyCode::Char('/')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('/')), &tx);
         assert!(matches!(app.modal, Some(Modal::Filter)));
     }
 
@@ -458,23 +483,24 @@ mod tests {
     fn test_key_arrows_adjust_index() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.set_resources(vec![
             mock_resource("a", "qemu", Some("pve1")),
             mock_resource("b", "qemu", Some("pve1")),
             mock_resource("c", "qemu", Some("pve1")),
         ]);
         assert_eq!(app.selected_index, 0);
-        app.handle_key(KeyEvent::from(KeyCode::Down));
+        app.handle_key(KeyEvent::from(KeyCode::Down), &tx);
         assert_eq!(app.selected_index, 1);
-        app.handle_key(KeyEvent::from(KeyCode::Down));
+        app.handle_key(KeyEvent::from(KeyCode::Down), &tx);
         assert_eq!(app.selected_index, 2);
-        app.handle_key(KeyEvent::from(KeyCode::Down));
+        app.handle_key(KeyEvent::from(KeyCode::Down), &tx);
         assert_eq!(app.selected_index, 2);
-        app.handle_key(KeyEvent::from(KeyCode::Up));
+        app.handle_key(KeyEvent::from(KeyCode::Up), &tx);
         assert_eq!(app.selected_index, 1);
-        app.handle_key(KeyEvent::from(KeyCode::Up));
+        app.handle_key(KeyEvent::from(KeyCode::Up), &tx);
         assert_eq!(app.selected_index, 0);
-        app.handle_key(KeyEvent::from(KeyCode::Up));
+        app.handle_key(KeyEvent::from(KeyCode::Up), &tx);
         assert_eq!(app.selected_index, 0);
     }
 
@@ -482,9 +508,10 @@ mod tests {
     fn test_key_enter_opens_details_when_resource_selected() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
         assert!(app.modal.is_none());
-        app.handle_key(KeyEvent::from(KeyCode::Enter));
+        app.handle_key(KeyEvent::from(KeyCode::Enter), &tx);
         assert!(matches!(app.modal, Some(Modal::Details)));
     }
 
@@ -492,8 +519,9 @@ mod tests {
     fn test_key_enter_noop_when_no_resource() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         assert!(app.modal.is_none());
-        app.handle_key(KeyEvent::from(KeyCode::Enter));
+        app.handle_key(KeyEvent::from(KeyCode::Enter), &tx);
         assert!(app.modal.is_none());
     }
 
@@ -501,30 +529,31 @@ mod tests {
     fn test_filter_modal_input() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.set_resources(vec![
             mock_resource("alpha", "qemu", Some("pve1")),
             mock_resource("beta", "qemu", Some("pve1")),
         ]);
 
-        app.handle_key(KeyEvent::from(KeyCode::Char('/')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('/')), &tx);
         assert!(matches!(app.modal, Some(Modal::Filter)));
 
-        app.handle_key(KeyEvent::from(KeyCode::Char('a')));
-        app.handle_key(KeyEvent::from(KeyCode::Char('l')));
-        app.handle_key(KeyEvent::from(KeyCode::Char('p')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('a')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('l')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('p')), &tx);
         assert_eq!(app.filter, "alp");
         assert_eq!(app.filtered_resources().len(), 1);
         assert_eq!(app.filtered_resources()[0].name, "alpha");
 
-        app.handle_key(KeyEvent::from(KeyCode::Backspace));
+        app.handle_key(KeyEvent::from(KeyCode::Backspace), &tx);
         assert_eq!(app.filter, "al");
         assert_eq!(app.filtered_resources().len(), 1);
 
-        app.handle_key(KeyEvent::from(KeyCode::Char('b')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('b')), &tx);
         assert_eq!(app.filter, "alb");
         assert_eq!(app.filtered_resources().len(), 0);
 
-        app.handle_key(KeyEvent::from(KeyCode::Esc));
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
         assert!(app.modal.is_none());
         assert_eq!(app.filter, "");
         assert_eq!(app.filtered_resources().len(), 2);
@@ -534,27 +563,32 @@ mod tests {
     fn test_confirm_modal_keys() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.modal = Some(Modal::Confirm(ConfirmAction::Stop {
             node: "pve1".to_string(),
             vmid: 100,
+            kind: "qemu".to_string(),
         }));
 
-        app.handle_key(KeyEvent::from(KeyCode::Char('y')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('y')), &tx);
         assert!(app.modal.is_none());
-        assert!(app.status_message.is_some());
+        assert_eq!(app.status_message, Some("Action sent...".to_string()));
+        assert!(matches!(rx.try_recv(), Ok(AppEvent::LifecycleAction(_))));
 
         app.modal = Some(Modal::Confirm(ConfirmAction::Reboot {
             node: "pve1".to_string(),
             vmid: 100,
+            kind: "qemu".to_string(),
         }));
-        app.handle_key(KeyEvent::from(KeyCode::Char('n')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('n')), &tx);
         assert!(app.modal.is_none());
 
         app.modal = Some(Modal::Confirm(ConfirmAction::Reboot {
             node: "pve1".to_string(),
             vmid: 100,
+            kind: "lxc".to_string(),
         }));
-        app.handle_key(KeyEvent::from(KeyCode::Esc));
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
         assert!(app.modal.is_none());
     }
 
@@ -562,17 +596,18 @@ mod tests {
     fn test_help_modal_close_keys() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.modal = Some(Modal::Help);
 
-        app.handle_key(KeyEvent::from(KeyCode::Char('?')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('?')), &tx);
         assert!(app.modal.is_none());
 
         app.modal = Some(Modal::Help);
-        app.handle_key(KeyEvent::from(KeyCode::Esc));
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
         assert!(app.modal.is_none());
 
         app.modal = Some(Modal::Help);
-        app.handle_key(KeyEvent::from(KeyCode::Char('q')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('q')), &tx);
         assert!(app.modal.is_none());
     }
 
@@ -580,36 +615,45 @@ mod tests {
     fn test_details_modal_close_keys() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.modal = Some(Modal::Details);
 
-        app.handle_key(KeyEvent::from(KeyCode::Esc));
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
         assert!(app.modal.is_none());
 
         app.modal = Some(Modal::Details);
-        app.handle_key(KeyEvent::from(KeyCode::Char('q')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('q')), &tx);
         assert!(app.modal.is_none());
     }
 
     #[test]
-    fn test_key_s_sets_status_message() {
+    fn test_key_s_sends_lifecycle_start() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
-        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
-        app.handle_key(KeyEvent::from(KeyCode::Char('s')));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        let mut resources = vec![mock_resource("vm1", "qemu", Some("pve1"))];
+        resources[0].id = "qemu/100".to_string();
+        app.set_resources(resources);
+        app.handle_key(KeyEvent::from(KeyCode::Char('s')), &tx);
         assert_eq!(app.status_message, Some("Starting vm1...".to_string()));
+        assert!(
+            matches!(rx.try_recv(), Ok(AppEvent::LifecycleAction(LifecycleAction::Start { node, vmid, kind })) if node == "pve1" && vmid == 100 && kind == "qemu")
+        );
     }
 
     #[test]
     fn test_key_upper_s_opens_stop_confirm() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.set_resources(vec![mock_resource("100", "qemu", Some("pve1"))]);
         app.resources[0].id = "qemu/100".to_string();
-        app.handle_key(KeyEvent::from(KeyCode::Char('S')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('S')), &tx);
         match app.modal {
-            Some(Modal::Confirm(ConfirmAction::Stop { node, vmid })) => {
+            Some(Modal::Confirm(ConfirmAction::Stop { node, vmid, kind })) => {
                 assert_eq!(node, "pve1");
                 assert_eq!(vmid, 100);
+                assert_eq!(kind, "qemu");
             }
             _ => panic!("Expected Stop confirm modal"),
         }
@@ -619,13 +663,15 @@ mod tests {
     fn test_key_r_opens_reboot_confirm() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         app.set_resources(vec![mock_resource("200", "lxc", Some("pve2"))]);
         app.resources[0].id = "lxc/200".to_string();
-        app.handle_key(KeyEvent::from(KeyCode::Char('r')));
+        app.handle_key(KeyEvent::from(KeyCode::Char('r')), &tx);
         match app.modal {
-            Some(Modal::Confirm(ConfirmAction::Reboot { node, vmid })) => {
+            Some(Modal::Confirm(ConfirmAction::Reboot { node, vmid, kind })) => {
                 assert_eq!(node, "pve2");
                 assert_eq!(vmid, 200);
+                assert_eq!(kind, "lxc");
             }
             _ => panic!("Expected Reboot confirm modal"),
         }

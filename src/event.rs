@@ -2,6 +2,39 @@ use crate::client::ClusterResource;
 use crossterm::event::KeyEvent;
 
 #[derive(Clone, Debug)]
+pub enum ConfirmAction {
+    Stop {
+        node: String,
+        vmid: u32,
+        kind: String,
+    },
+    Reboot {
+        node: String,
+        vmid: u32,
+        kind: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum LifecycleAction {
+    Start {
+        node: String,
+        vmid: u32,
+        kind: String,
+    },
+    Stop {
+        node: String,
+        vmid: u32,
+        kind: String,
+    },
+    Reboot {
+        node: String,
+        vmid: u32,
+        kind: String,
+    },
+}
+
+#[derive(Clone, Debug)]
 pub enum AppEvent {
     Key(KeyEvent),
     Tick,
@@ -9,4 +42,5 @@ pub enum AppEvent {
     ClusterSnapshot(Vec<ClusterResource>),
     ApiError(String),
     LifecycleComplete(String),
+    LifecycleAction(LifecycleAction),
 }

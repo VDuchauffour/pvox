@@ -16,7 +16,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::app::App;
 use crate::client::{ProxmoxClient, TaskStatus};
 use crate::config::Config;
-use crate::event::AppEvent;
+use crate::event::{AppEvent, LifecycleAction};
 use crate::tui::Tui;
 
 pub async fn run(config: Config) -> Result<()> {
@@ -43,7 +43,7 @@ pub async fn run(config: Config) -> Result<()> {
                         })?;
                     }
                     AppEvent::Key(key) => {
-                        app.handle_key(key);
+                        app.handle_key(key, &tx);
                         if app.quit {
                             break;
                         }
@@ -100,6 +100,60 @@ pub async fn run(config: Config) -> Result<()> {
                                     });
                                 }
                             }
+                        }
+                    }
+                    AppEvent::LifecycleAction(action) => {
+                        if let Some(ref client) = app.client {
+                            let client = Arc::clone(client);
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                let result = match action {
+                                    LifecycleAction::Start { node, vmid, kind } => {
+                                        if kind == "qemu" {
+                                            client.vm_start(&node, vmid).await
+                                        } else if kind == "lxc" {
+                                            client.lxc_start(&node, vmid).await
+                                        } else {
+                                            Err(crate::client::ProxmoxError::Api(format!(
+                                                "Unsupported resource type for start: {}",
+                                                kind
+                                            )))
+                                        }
+                                    }
+                                    LifecycleAction::Stop { node, vmid, kind } => {
+                                        if kind == "qemu" {
+                                            client.vm_stop(&node, vmid).await
+                                        } else if kind == "lxc" {
+                                            client.lxc_stop(&node, vmid).await
+                                        } else {
+                                            Err(crate::client::ProxmoxError::Api(format!(
+                                                "Unsupported resource type for stop: {}",
+                                                kind
+                                            )))
+                                        }
+                                    }
+                                    LifecycleAction::Reboot { node, vmid, kind } => {
+                                        if kind == "qemu" {
+                                            client.vm_reboot(&node, vmid).await
+                                        } else if kind == "lxc" {
+                                            client.lxc_reboot(&node, vmid).await
+                                        } else {
+                                            Err(crate::client::ProxmoxError::Api(format!(
+                                                "Unsupported resource type for reboot: {}",
+                                                kind
+                                            )))
+                                        }
+                                    }
+                                };
+                                match result {
+                                    Ok(upid) => {
+                                        let _ = tx.send(AppEvent::LifecycleComplete(upid));
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(AppEvent::ApiError(e.to_string()));
+                                    }
+                                }
+                            });
                         }
                     }
                 }
