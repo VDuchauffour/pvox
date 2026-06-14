@@ -1,62 +1,16 @@
+mod command;
+mod input;
+pub mod modal;
+pub mod sparkline;
+
 use std::sync::Arc;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tokio::sync::mpsc::UnboundedSender;
+pub use command::view_completion;
+pub use modal::Modal;
+pub use sparkline::SparkLineData;
 
-use crate::client::{ClusterResource, ProxmoxClient};
+use crate::client::ClusterResource;
 use crate::config::Config;
-use crate::event::{AppEvent, ConfirmAction, LifecycleAction};
-
-#[derive(Debug, Clone)]
-pub enum Modal {
-    Help,
-    Filter,
-    Command,
-    CommandError(String),
-    Confirm(ConfirmAction),
-    Details,
-}
-
-pub struct SparklineData {
-    pub cpu_history: Vec<u64>,
-    pub mem_history: Vec<u64>,
-}
-
-impl SparklineData {
-    pub fn new() -> Self {
-        Self {
-            cpu_history: Vec::with_capacity(60),
-            mem_history: Vec::with_capacity(60),
-        }
-    }
-}
-
-impl Default for SparklineData {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SparklineData {
-    pub fn push_cpu(&mut self, value: u64) {
-        if self.cpu_history.len() >= 60 {
-            self.cpu_history.remove(0);
-        }
-        self.cpu_history.push(value);
-    }
-
-    pub fn push_mem(&mut self, value: u64) {
-        if self.mem_history.len() >= 60 {
-            self.mem_history.remove(0);
-        }
-        self.mem_history.push(value);
-    }
-
-    pub fn clear(&mut self) {
-        self.cpu_history.clear();
-        self.mem_history.clear();
-    }
-}
 
 pub struct App {
     pub resources: Vec<ClusterResource>,
@@ -69,9 +23,9 @@ pub struct App {
     pub status_message: Option<String>,
     pub connected: bool,
     pub config: Config,
-    pub client: Option<Arc<ProxmoxClient>>,
+    pub client: Option<Arc<crate::client::ProxmoxClient>>,
     pub pending_upids: Vec<String>,
-    pub sparkline_data: SparklineData,
+    pub sparkline_data: SparkLineData,
     pub proxmox_version: String,
     pub proxmox_user: String,
     pub quit: bool,
@@ -82,7 +36,7 @@ impl App {
         let client = if let (Some(host), Some(token_id), Some(token)) =
             (&config.host, &config.token_id, &config.token)
         {
-            Some(Arc::new(ProxmoxClient::new(
+            Some(Arc::new(crate::client::ProxmoxClient::new(
                 host,
                 token_id,
                 token,
@@ -106,7 +60,7 @@ impl App {
             config,
             client,
             pending_upids: Vec::new(),
-            sparkline_data: SparklineData::new(),
+            sparkline_data: SparkLineData::new(),
             proxmox_version: String::new(),
             proxmox_user: String::new(),
             quit: false,
@@ -171,240 +125,16 @@ impl App {
                 .min(self.display_resources.len().saturating_sub(1));
         }
     }
-
-    pub fn handle_key(&mut self, key: KeyEvent, tx: &UnboundedSender<AppEvent>) {
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
-            self.quit = true;
-            return;
-        }
-
-        if let Some(ref modal) = self.modal {
-            match modal {
-                Modal::Filter => self.handle_filter_input(key),
-                Modal::Command => self.handle_command_input(key),
-                Modal::CommandError(_) => self.handle_command_error_input(key),
-                Modal::Confirm(action) => self.handle_confirm_input(key, action.clone(), tx),
-                Modal::Help => self.handle_help_input(key),
-                Modal::Details => self.handle_details_input(key),
-            }
-            return;
-        }
-
-        match key.code {
-            KeyCode::Char('q') => self.quit = true,
-            KeyCode::Char('?') => self.modal = Some(Modal::Help),
-            KeyCode::Char('/') => self.modal = Some(Modal::Filter),
-            KeyCode::Char(':') => self.modal = Some(Modal::Command),
-            KeyCode::Up => self.select_prev(),
-            KeyCode::Down => self.select_next(),
-            KeyCode::Enter if self.current_resource().is_some() => {
-                self.sparkline_data.clear();
-                self.modal = Some(Modal::Details);
-            }
-            KeyCode::Char('s')
-                if let Some(r) = self.current_resource()
-                    && let (Some(node), Some(vmid)) =
-                        (r.node.clone(), Self::extract_vmid(&r.id)) =>
-            {
-                let kind = r.r#type.clone();
-                let _ = tx.send(AppEvent::LifecycleAction(LifecycleAction::Start {
-                    node,
-                    vmid,
-                    kind,
-                }));
-                self.status_message = Some(format!("Starting {}...", r.name));
-            }
-            KeyCode::Char('S')
-                if let Some(r) = self.current_resource()
-                    && let (Some(node), Some(vmid)) =
-                        (r.node.clone(), Self::extract_vmid(&r.id)) =>
-            {
-                let kind = r.r#type.clone();
-                self.modal = Some(Modal::Confirm(ConfirmAction::Stop { node, vmid, kind }));
-            }
-            KeyCode::Char('r')
-                if let Some(r) = self.current_resource()
-                    && let (Some(node), Some(vmid)) =
-                        (r.node.clone(), Self::extract_vmid(&r.id)) =>
-            {
-                let kind = r.r#type.clone();
-                self.modal = Some(Modal::Confirm(ConfirmAction::Reboot { node, vmid, kind }));
-            }
-            _ => {}
-        }
-    }
-
-    pub fn select_prev(&mut self) {
-        if self.selected_index > 0 {
-            self.selected_index -= 1;
-        }
-    }
-
-    pub fn select_next(&mut self) {
-        if !self.display_resources.is_empty()
-            && self.selected_index < self.display_resources.len() - 1
-        {
-            self.selected_index += 1;
-        }
-    }
-
-    fn handle_filter_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => self.modal = None,
-            KeyCode::Esc => {
-                self.filter.clear();
-                self.update_display_resources();
-                self.modal = None;
-            }
-            KeyCode::Backspace => {
-                self.filter.pop();
-                self.update_display_resources();
-            }
-            KeyCode::Char(c) => {
-                self.filter.push(c);
-                self.update_display_resources();
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_command_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                let input = self.command.trim().to_string();
-                if let Some(view) = Self::resolve_view(&input) {
-                    self.view = view;
-                    self.filter.clear();
-                    self.selected_index = 0;
-                    self.update_display_resources();
-                    self.command.clear();
-                    self.modal = None;
-                } else if input.is_empty() {
-                    self.command.clear();
-                    self.modal = None;
-                } else {
-                    let bad = self.command.clone();
-                    self.command.clear();
-                    self.modal = Some(Modal::CommandError(bad));
-                }
-            }
-            KeyCode::Tab => {
-                if let Some(suffix) = Self::view_completion(&self.command) {
-                    self.command.push_str(suffix);
-                }
-            }
-            KeyCode::Esc => {
-                self.command.clear();
-                self.modal = None;
-            }
-            KeyCode::Backspace => {
-                self.command.pop();
-            }
-            KeyCode::Char(c) => {
-                self.command.push(c);
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_command_error_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc | KeyCode::Enter => {
-                self.modal = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn resolve_view(input: &str) -> Option<String> {
-        match input.trim().to_lowercase().as_str() {
-            "" => None,
-            "vm" | "vms" | "qemu" => Some("qemu".to_string()),
-            "node" | "nodes" => Some("node".to_string()),
-            "ct" | "container" | "containers" | "lxc" => Some("lxc".to_string()),
-            "storage" | "storages" => Some("storage".to_string()),
-            _ => None,
-        }
-    }
-
-    const COMPLETIONS: &[&str] = &[
-        "vm",
-        "vms",
-        "qemu",
-        "node",
-        "nodes",
-        "ct",
-        "container",
-        "containers",
-        "lxc",
-        "storage",
-        "storages",
-    ];
-
-    pub fn view_completion(input: &str) -> Option<&'static str> {
-        let lower = input.trim().to_lowercase();
-        if lower.is_empty() {
-            return None;
-        }
-        Self::COMPLETIONS
-            .iter()
-            .find(|v| v.starts_with(&lower))
-            .map(|v| &v[lower.len()..])
-    }
-
-    fn handle_confirm_input(
-        &mut self,
-        key: KeyEvent,
-        action: ConfirmAction,
-        tx: &UnboundedSender<AppEvent>,
-    ) {
-        match key.code {
-            KeyCode::Char('y') => {
-                let lifecycle_action = match action {
-                    ConfirmAction::Stop { node, vmid, kind } => {
-                        LifecycleAction::Stop { node, vmid, kind }
-                    }
-                    ConfirmAction::Reboot { node, vmid, kind } => {
-                        LifecycleAction::Reboot { node, vmid, kind }
-                    }
-                };
-                let _ = tx.send(AppEvent::LifecycleAction(lifecycle_action));
-                self.modal = None;
-                self.status_message = Some("Action sent...".to_string());
-            }
-            KeyCode::Char('n') | KeyCode::Esc => {
-                self.modal = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_help_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => {
-                self.modal = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_details_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.modal = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn extract_vmid(id: &str) -> Option<u32> {
-        id.split('/').nth(1)?.parse().ok()
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use super::command::{extract_vmid, resolve_view, view_completion};
+    use super::modal::Modal;
     use super::*;
+    use crate::event::{AppEvent, ConfirmAction, LifecycleAction};
 
     fn mock_resource(name: &str, rtype: &str, node: Option<&str>) -> ClusterResource {
         ClusterResource {
@@ -823,10 +553,10 @@ mod tests {
 
     #[test]
     fn test_extract_vmid_parses_id() {
-        assert_eq!(App::extract_vmid("qemu/100"), Some(100));
-        assert_eq!(App::extract_vmid("lxc/200"), Some(200));
-        assert_eq!(App::extract_vmid("node/pve"), None);
-        assert_eq!(App::extract_vmid("invalid"), None);
+        assert_eq!(extract_vmid("qemu/100"), Some(100));
+        assert_eq!(extract_vmid("lxc/200"), Some(200));
+        assert_eq!(extract_vmid("node/pve"), None);
+        assert_eq!(extract_vmid("invalid"), None);
     }
 
     fn key(c: char) -> KeyEvent {
@@ -1087,20 +817,20 @@ mod tests {
 
     #[test]
     fn test_resolve_view_aliases() {
-        assert_eq!(App::resolve_view("vm"), Some("qemu".to_string()));
-        assert_eq!(App::resolve_view("vms"), Some("qemu".to_string()));
-        assert_eq!(App::resolve_view("qemu"), Some("qemu".to_string()));
-        assert_eq!(App::resolve_view("VM"), Some("qemu".to_string()));
-        assert_eq!(App::resolve_view("node"), Some("node".to_string()));
-        assert_eq!(App::resolve_view("nodes"), Some("node".to_string()));
-        assert_eq!(App::resolve_view("ct"), Some("lxc".to_string()));
-        assert_eq!(App::resolve_view("container"), Some("lxc".to_string()));
-        assert_eq!(App::resolve_view("containers"), Some("lxc".to_string()));
-        assert_eq!(App::resolve_view("lxc"), Some("lxc".to_string()));
-        assert_eq!(App::resolve_view("storage"), Some("storage".to_string()));
-        assert_eq!(App::resolve_view("storages"), Some("storage".to_string()));
-        assert_eq!(App::resolve_view(""), None);
-        assert_eq!(App::resolve_view("sdn"), None);
+        assert_eq!(resolve_view("vm"), Some("qemu".to_string()));
+        assert_eq!(resolve_view("vms"), Some("qemu".to_string()));
+        assert_eq!(resolve_view("qemu"), Some("qemu".to_string()));
+        assert_eq!(resolve_view("VM"), Some("qemu".to_string()));
+        assert_eq!(resolve_view("node"), Some("node".to_string()));
+        assert_eq!(resolve_view("nodes"), Some("node".to_string()));
+        assert_eq!(resolve_view("ct"), Some("lxc".to_string()));
+        assert_eq!(resolve_view("container"), Some("lxc".to_string()));
+        assert_eq!(resolve_view("containers"), Some("lxc".to_string()));
+        assert_eq!(resolve_view("lxc"), Some("lxc".to_string()));
+        assert_eq!(resolve_view("storage"), Some("storage".to_string()));
+        assert_eq!(resolve_view("storages"), Some("storage".to_string()));
+        assert_eq!(resolve_view(""), None);
+        assert_eq!(resolve_view("sdn"), None);
     }
 
     #[test]
@@ -1157,27 +887,27 @@ mod tests {
 
     #[test]
     fn test_view_completion_partial() {
-        assert_eq!(App::view_completion("n"), Some("ode"));
-        assert_eq!(App::view_completion("no"), Some("de"));
-        assert_eq!(App::view_completion("nod"), Some("e"));
-        assert_eq!(App::view_completion("v"), Some("m"));
-        assert_eq!(App::view_completion("q"), Some("emu"));
-        assert_eq!(App::view_completion("ct"), Some(""));
-        assert_eq!(App::view_completion("l"), Some("xc"));
-        assert_eq!(App::view_completion("st"), Some("orage"));
+        assert_eq!(view_completion("n"), Some("ode"));
+        assert_eq!(view_completion("no"), Some("de"));
+        assert_eq!(view_completion("nod"), Some("e"));
+        assert_eq!(view_completion("v"), Some("m"));
+        assert_eq!(view_completion("q"), Some("emu"));
+        assert_eq!(view_completion("ct"), Some(""));
+        assert_eq!(view_completion("l"), Some("xc"));
+        assert_eq!(view_completion("st"), Some("orage"));
     }
 
     #[test]
     fn test_view_completion_full_match() {
-        assert_eq!(App::view_completion("node"), Some(""));
-        assert_eq!(App::view_completion("qemu"), Some(""));
-        assert_eq!(App::view_completion("vm"), Some(""));
+        assert_eq!(view_completion("node"), Some(""));
+        assert_eq!(view_completion("qemu"), Some(""));
+        assert_eq!(view_completion("vm"), Some(""));
     }
 
     #[test]
     fn test_view_completion_no_match() {
-        assert_eq!(App::view_completion("xyz"), None);
-        assert_eq!(App::view_completion(""), None);
+        assert_eq!(view_completion("xyz"), None);
+        assert_eq!(view_completion(""), None);
     }
 
     #[test]

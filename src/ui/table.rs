@@ -1,3 +1,4 @@
+use ratatui::widgets::Paragraph;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -125,5 +126,3 @@ fn render_status_bar(frame: &mut Frame, _theme: &Theme) {
 
     frame.render_widget(Paragraph::new(Line::from("")), status_area);
 }
-
-use ratatui::widgets::Paragraph;

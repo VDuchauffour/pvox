@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::App;
+use crate::app::{App, view_completion};
 use crate::theme::Theme;
 
 /// Render the filter input bar at the bottom of the list view.
@@ -32,7 +32,7 @@ pub fn render_command(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         Span::raw(app.command.clone()),
     ];
 
-    if let Some(suffix) = App::view_completion(&app.command) {
+    if let Some(suffix) = view_completion(&app.command) {
         let completion_style = if no_color {
             theme.completion_no_color()
         } else {
