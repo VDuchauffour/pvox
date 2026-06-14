@@ -14,7 +14,7 @@ use crate::app::{App, Modal};
 use crate::theme::Theme;
 
 /// Height reserved for the header section (info + keybindings + logo).
-const HEADER_HEIGHT: u16 = 7;
+pub(super) const HEADER_HEIGHT: u16 = 7;
 
 /// Render the main resource list view, including header, optional filter/command bar, and table.
 pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
@@ -121,7 +121,7 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
     render_status_bar(frame, theme);
 }
 
-fn render_status_bar(frame: &mut Frame, _theme: &Theme) {
+pub(super) fn render_status_bar(frame: &mut Frame, _theme: &Theme) {
     let area = frame.area();
     let status_area = Rect {
         x: area.x,

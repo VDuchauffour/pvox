@@ -6,7 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::app::App;
+use crate::app::{App, Modal};
 use crate::theme::Theme;
 
 /// Proxmox logo pixel art (2-row half-block encoding).
@@ -38,7 +38,9 @@ pub fn render_header(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     .areas(area);
 
     render_header_info(frame, app, info_area, theme);
-    render_header_keys(frame, keys_area, theme);
+    if !matches!(app.modal, Some(Modal::Help)) {
+        render_header_keys(frame, keys_area, theme);
+    }
     render_header_logo(frame, app, logo_area, theme);
 }
 
