@@ -13,10 +13,7 @@ use crate::event::ConfirmAction;
 pub fn render(frame: &mut Frame, app: &App) {
     match &app.modal {
         Some(Modal::Help) => render_help(frame, app),
-        Some(Modal::Filter) => {
-            render_list(frame, app); // Show list behind filter
-            render_filter(frame, app);
-        }
+        Some(Modal::Filter) => render_list(frame, app),
         Some(Modal::Confirm(action)) => {
             render_list(frame, app);
             render_confirm(frame, action, app);
@@ -58,26 +55,25 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     horizontal_layout.split(popup_area)[1]
 }
 
-fn render_filter(frame: &mut Frame, app: &App) {
-    render_list(frame, app);
+fn render_filter(frame: &mut Frame, app: &App, area: Rect) {
+    let no_color = app.config.no_color;
 
-    let area = frame.area();
-    let input_area = Rect {
-        x: area.x,
-        y: area.height.saturating_sub(3),
-        width: area.width,
-        height: 3,
+    let slash_style = if no_color {
+        Style::default().add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Filter")
-        .title_alignment(Alignment::Center);
+    let line = Line::from(vec![
+        Span::styled(" / ", slash_style),
+        Span::raw(app.filter.clone()),
+    ]);
 
-    let text = format!("Filter: {}", app.filter);
-    let paragraph = Paragraph::new(text).block(block);
+    let block = Block::default().borders(Borders::ALL);
 
-    frame.render_widget(paragraph, input_area);
+    frame.render_widget(Paragraph::new(line).block(block), area);
 }
 
 fn render_confirm(frame: &mut Frame, action: &ConfirmAction, _app: &App) {
@@ -379,6 +375,15 @@ fn render_list(frame: &mut Frame, app: &App) {
 
     render_header(frame, app, header_area);
 
+    let table_area = if matches!(app.modal, Some(Modal::Filter)) {
+        let [filter_area, rest] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(main_area);
+        render_filter(frame, app, filter_area);
+        rest
+    } else {
+        main_area
+    };
+
     let widths = [
         Constraint::Min(8),  // Type
         Constraint::Min(15), // Name
@@ -457,7 +462,7 @@ fn render_list(frame: &mut Frame, app: &App) {
             Style::default().bg(Color::Blue).fg(Color::White)
         });
 
-    frame.render_stateful_widget(table, main_area, &mut table_state);
+    frame.render_stateful_widget(table, table_area, &mut table_state);
 
     render_status_bar(frame, app);
 }
