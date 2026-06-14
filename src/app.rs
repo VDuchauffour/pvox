@@ -362,6 +362,20 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_vm_matches_type_qemu_and_name_vm_100() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![
+            mock_resource("vm-100", "qemu", Some("pve1")),
+            mock_resource("web1", "qemu", Some("pve1")),
+            mock_resource("db1", "lxc", Some("pve2")),
+        ]);
+        app.set_filter("vm".to_string());
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].name, "vm-100");
+    }
+
+    #[test]
     fn test_key_q_sets_quit() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();

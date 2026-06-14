@@ -46,12 +46,22 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 fn render_filter(frame: &mut Frame, app: &App) {
+    render_list(frame, app);
+
     let area = frame.area();
-    frame.render_widget(
-        Paragraph::new(format!("Filter: {}", app.filter))
-            .block(Block::default().borders(Borders::ALL)),
-        area,
-    );
+    let input_area = Rect {
+        x: area.x,
+        y: area.height.saturating_sub(3),
+        width: area.width,
+        height: 3,
+    };
+
+    let block = Block::default().borders(Borders::ALL).title("Filter");
+
+    let text = format!("Filter: {}", app.filter);
+    let paragraph = Paragraph::new(text).block(block);
+
+    frame.render_widget(paragraph, input_area);
 }
 
 fn render_confirm(frame: &mut Frame, action: &ConfirmAction, _app: &App) {
