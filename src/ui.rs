@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Sparkline, Table, TableState, Wrap},
-    Frame,
 };
 
 use crate::app::{App, Modal};
@@ -85,6 +85,7 @@ fn render_confirm(frame: &mut Frame, action: &ConfirmAction, _app: &App) {
 }
 
 fn render_details(frame: &mut Frame, app: &App) {
+    let no_color = app.config.no_color;
     let area = centered_rect(60, 70, frame.area());
     let block = Block::default()
         .borders(Borders::ALL)
@@ -118,11 +119,19 @@ fn render_details(frame: &mut Frame, app: &App) {
     if !app.sparkline_data.cpu_history.is_empty() {
         let cpu_sparkline = Sparkline::default()
             .data(&app.sparkline_data.cpu_history)
-            .style(Style::default().fg(Color::Yellow));
+            .style(if no_color {
+                Style::default()
+            } else {
+                Style::default().fg(Color::Yellow)
+            });
         frame.render_widget(cpu_sparkline, sparkline_chunks[0]);
         let mem_sparkline = Sparkline::default()
             .data(&app.sparkline_data.mem_history)
-            .style(Style::default().fg(Color::Cyan));
+            .style(if no_color {
+                Style::default()
+            } else {
+                Style::default().fg(Color::Cyan)
+            });
         frame.render_widget(mem_sparkline, sparkline_chunks[1]);
     } else {
         let fallback =
