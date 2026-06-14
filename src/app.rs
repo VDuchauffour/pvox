@@ -11,6 +11,8 @@ use crate::event::{AppEvent, ConfirmAction, LifecycleAction};
 pub enum Modal {
     Help,
     Filter,
+    Command,
+    CommandError(String),
     Confirm(ConfirmAction),
     Details,
 }
@@ -60,6 +62,8 @@ pub struct App {
     pub resources: Vec<ClusterResource>,
     pub selected_index: usize,
     pub filter: String,
+    pub command: String,
+    pub view: String,
     pub display_resources: Vec<ClusterResource>,
     pub modal: Option<Modal>,
     pub status_message: Option<String>,
@@ -91,6 +95,8 @@ impl App {
             resources: Vec::new(),
             selected_index: 0,
             filter,
+            command: String::new(),
+            view: "qemu".to_string(),
             display_resources: Vec::new(),
             modal: None,
             status_message: None,
@@ -124,23 +130,21 @@ impl App {
 
     pub fn update_display_resources(&mut self) {
         let f = self.filter.to_lowercase();
-        if f.is_empty() {
-            self.display_resources = self.resources.clone();
-        } else {
-            self.display_resources = self
-                .resources
-                .iter()
-                .filter(|r| {
-                    r.name.to_lowercase().contains(&f)
-                        || r.r#type.to_lowercase().contains(&f)
-                        || r.node
-                            .as_ref()
-                            .map(|n| n.to_lowercase().contains(&f))
-                            .unwrap_or(false)
-                })
-                .cloned()
-                .collect();
-        }
+        self.display_resources = self
+            .resources
+            .iter()
+            .filter(|r| r.r#type == self.view)
+            .filter(|r| {
+                f.is_empty()
+                    || r.name.to_lowercase().contains(&f)
+                    || r.r#type.to_lowercase().contains(&f)
+                    || r.node
+                        .as_ref()
+                        .map(|n| n.to_lowercase().contains(&f))
+                        .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
         self.selected_index = self
             .selected_index
             .min(self.display_resources.len().saturating_sub(1));
@@ -173,6 +177,8 @@ impl App {
         if let Some(ref modal) = self.modal {
             match modal {
                 Modal::Filter => self.handle_filter_input(key),
+                Modal::Command => self.handle_command_input(key),
+                Modal::CommandError(_) => self.handle_command_error_input(key),
                 Modal::Confirm(action) => self.handle_confirm_input(key, action.clone(), tx),
                 Modal::Help => self.handle_help_input(key),
                 Modal::Details => self.handle_details_input(key),
@@ -184,6 +190,7 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.modal = Some(Modal::Help),
             KeyCode::Char('/') => self.modal = Some(Modal::Filter),
+            KeyCode::Char(':') => self.modal = Some(Modal::Command),
             KeyCode::Up => self.select_prev(),
             KeyCode::Down => self.select_next(),
             KeyCode::Enter if self.current_resource().is_some() => {
@@ -255,6 +262,90 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn handle_command_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                let input = self.command.trim().to_string();
+                if let Some(view) = Self::resolve_view(&input) {
+                    self.view = view;
+                    self.filter.clear();
+                    self.selected_index = 0;
+                    self.update_display_resources();
+                    self.command.clear();
+                    self.modal = None;
+                } else if input.is_empty() {
+                    self.command.clear();
+                    self.modal = None;
+                } else {
+                    let bad = self.command.clone();
+                    self.command.clear();
+                    self.modal = Some(Modal::CommandError(bad));
+                }
+            }
+            KeyCode::Tab => {
+                if let Some(suffix) = Self::view_completion(&self.command) {
+                    self.command.push_str(suffix);
+                }
+            }
+            KeyCode::Esc => {
+                self.command.clear();
+                self.modal = None;
+            }
+            KeyCode::Backspace => {
+                self.command.pop();
+            }
+            KeyCode::Char(c) => {
+                self.command.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_command_error_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                self.modal = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn resolve_view(input: &str) -> Option<String> {
+        match input.trim().to_lowercase().as_str() {
+            "" => None,
+            "vm" | "vms" | "qemu" => Some("qemu".to_string()),
+            "node" | "nodes" => Some("node".to_string()),
+            "ct" | "container" | "containers" | "lxc" => Some("lxc".to_string()),
+            "storage" | "storages" => Some("storage".to_string()),
+            _ => None,
+        }
+    }
+
+    const COMPLETIONS: &[&str] = &[
+        "vm",
+        "vms",
+        "qemu",
+        "node",
+        "nodes",
+        "ct",
+        "container",
+        "containers",
+        "lxc",
+        "storage",
+        "storages",
+    ];
+
+    pub fn view_completion(input: &str) -> Option<&'static str> {
+        let lower = input.trim().to_lowercase();
+        if lower.is_empty() {
+            return None;
+        }
+        Self::COMPLETIONS
+            .iter()
+            .find(|v| v.starts_with(&lower))
+            .map(|v| &v[lower.len()..])
     }
 
     fn handle_confirm_input(
@@ -342,13 +433,28 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_filter_returns_all() {
+    fn test_default_view_shows_only_vms() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
+        assert_eq!(app.view, "qemu");
         app.set_resources(vec![
             mock_resource("web1", "qemu", Some("pve1")),
             mock_resource("db1", "lxc", Some("pve2")),
             mock_resource("storage1", "storage", None),
+        ]);
+        app.set_filter("".to_string());
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.selected_resource().unwrap().name, "web1");
+    }
+
+    #[test]
+    fn test_empty_filter_returns_all_in_view() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![
+            mock_resource("web1", "qemu", Some("pve1")),
+            mock_resource("web2", "qemu", Some("pve2")),
+            mock_resource("web3", "qemu", None),
         ]);
         app.set_filter("".to_string());
         assert_eq!(app.filtered_resources().len(), 3);
@@ -376,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_subset_by_type() {
+    fn test_view_switch_to_lxc_lists_only_containers() {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
         app.set_resources(vec![
@@ -384,7 +490,8 @@ mod tests {
             mock_resource("ct1", "lxc", Some("pve1")),
             mock_resource("vm2", "qemu", Some("pve2")),
         ]);
-        app.set_filter("lxc".to_string());
+        app.view = "lxc".to_string();
+        app.update_display_resources();
         assert_eq!(app.filtered_resources().len(), 1);
         assert_eq!(app.filtered_resources()[0].name, "ct1");
     }
@@ -696,6 +803,7 @@ mod tests {
         let config = mock_config();
         let mut app = App::new(config).unwrap();
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.view = "lxc".to_string();
         app.set_resources(vec![mock_resource("200", "lxc", Some("pve2"))]);
         app.resources[0].id = "lxc/200".to_string();
         app.handle_key(KeyEvent::from(KeyCode::Char('r')), &tx);
@@ -880,7 +988,7 @@ mod tests {
         let mut app = App::new(config).unwrap();
         app.set_resources(vec![
             mock_resource("web1", "qemu", Some("pve1")),
-            mock_resource("db1", "lxc", Some("pve2")),
+            mock_resource("db1", "qemu", Some("pve2")),
             mock_resource("web2", "qemu", Some("pve2")),
         ]);
 
@@ -896,5 +1004,199 @@ mod tests {
         app.set_filter("".to_string());
         assert!(app.filter.is_empty());
         assert_eq!(app.filtered_resources().len(), 3);
+    }
+
+    #[test]
+    fn test_command_opens_modal() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        assert!(app.modal.is_none());
+        app.handle_key(KeyEvent::from(KeyCode::Char(':')), &tx);
+        assert!(matches!(app.modal, Some(Modal::Command)));
+    }
+
+    #[test]
+    fn test_command_input_typing() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.modal = Some(Modal::Command);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+
+        app.handle_key(KeyEvent::from(KeyCode::Char('n')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('o')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('d')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('e')), &tx);
+        assert_eq!(app.command, "node");
+    }
+
+    #[test]
+    fn test_command_enter_switches_view() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.set_resources(vec![
+            mock_resource("pve1", "node", Some("pve1")),
+            mock_resource("vm1", "qemu", Some("pve1")),
+        ]);
+
+        app.handle_key(KeyEvent::from(KeyCode::Char(':')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('n')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('o')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('d')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('e')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Enter), &tx);
+
+        assert!(app.modal.is_none());
+        assert_eq!(app.view, "node");
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].name, "pve1");
+        assert!(app.command.is_empty());
+    }
+
+    #[test]
+    fn test_command_escape_cancels() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::Command);
+        app.command = "node".to_string();
+
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
+
+        assert!(app.modal.is_none());
+        assert_eq!(app.view, "qemu");
+        assert!(app.command.is_empty());
+    }
+
+    #[test]
+    fn test_command_backspace() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.modal = Some(Modal::Command);
+        app.command = "node".to_string();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+
+        app.handle_key(KeyEvent::from(KeyCode::Backspace), &tx);
+        assert_eq!(app.command, "nod");
+    }
+
+    #[test]
+    fn test_resolve_view_aliases() {
+        assert_eq!(App::resolve_view("vm"), Some("qemu".to_string()));
+        assert_eq!(App::resolve_view("vms"), Some("qemu".to_string()));
+        assert_eq!(App::resolve_view("qemu"), Some("qemu".to_string()));
+        assert_eq!(App::resolve_view("VM"), Some("qemu".to_string()));
+        assert_eq!(App::resolve_view("node"), Some("node".to_string()));
+        assert_eq!(App::resolve_view("nodes"), Some("node".to_string()));
+        assert_eq!(App::resolve_view("ct"), Some("lxc".to_string()));
+        assert_eq!(App::resolve_view("container"), Some("lxc".to_string()));
+        assert_eq!(App::resolve_view("containers"), Some("lxc".to_string()));
+        assert_eq!(App::resolve_view("lxc"), Some("lxc".to_string()));
+        assert_eq!(App::resolve_view("storage"), Some("storage".to_string()));
+        assert_eq!(App::resolve_view("storages"), Some("storage".to_string()));
+        assert_eq!(App::resolve_view(""), None);
+        assert_eq!(App::resolve_view("sdn"), None);
+    }
+
+    #[test]
+    fn test_command_error_on_invalid_input() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+
+        app.handle_key(KeyEvent::from(KeyCode::Char(':')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('f')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('o')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Char('o')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Enter), &tx);
+
+        assert!(matches!(app.modal, Some(Modal::CommandError(ref msg)) if msg == "foo"));
+        assert!(app.command.is_empty());
+        assert_eq!(app.view, "qemu");
+    }
+
+    #[test]
+    fn test_command_error_dismiss_on_escape() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::CommandError("xyz".to_string()));
+
+        app.handle_key(KeyEvent::from(KeyCode::Esc), &tx);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn test_command_error_dismiss_on_enter() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::CommandError("xyz".to_string()));
+
+        app.handle_key(KeyEvent::from(KeyCode::Enter), &tx);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn test_command_empty_enter_closes_modal() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+
+        app.handle_key(KeyEvent::from(KeyCode::Char(':')), &tx);
+        app.handle_key(KeyEvent::from(KeyCode::Enter), &tx);
+        assert!(app.modal.is_none());
+        assert_eq!(app.view, "qemu");
+    }
+
+    #[test]
+    fn test_view_completion_partial() {
+        assert_eq!(App::view_completion("n"), Some("ode"));
+        assert_eq!(App::view_completion("no"), Some("de"));
+        assert_eq!(App::view_completion("nod"), Some("e"));
+        assert_eq!(App::view_completion("v"), Some("m"));
+        assert_eq!(App::view_completion("q"), Some("emu"));
+        assert_eq!(App::view_completion("ct"), Some(""));
+        assert_eq!(App::view_completion("l"), Some("xc"));
+        assert_eq!(App::view_completion("st"), Some("orage"));
+    }
+
+    #[test]
+    fn test_view_completion_full_match() {
+        assert_eq!(App::view_completion("node"), Some(""));
+        assert_eq!(App::view_completion("qemu"), Some(""));
+        assert_eq!(App::view_completion("vm"), Some(""));
+    }
+
+    #[test]
+    fn test_view_completion_no_match() {
+        assert_eq!(App::view_completion("xyz"), None);
+        assert_eq!(App::view_completion(""), None);
+    }
+
+    #[test]
+    fn test_tab_accepts_completion() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::Command);
+        app.command = "no".to_string();
+
+        app.handle_key(KeyEvent::from(KeyCode::Tab), &tx);
+        assert_eq!(app.command, "node");
+    }
+
+    #[test]
+    fn test_tab_no_completion_is_noop() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        app.modal = Some(Modal::Command);
+        app.command = "xyz".to_string();
+
+        app.handle_key(KeyEvent::from(KeyCode::Tab), &tx);
+        assert_eq!(app.command, "xyz");
     }
 }

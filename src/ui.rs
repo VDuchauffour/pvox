@@ -9,35 +9,58 @@ use ratatui::{
 use crate::app::{App, Modal};
 use crate::client::ClusterResource;
 use crate::event::ConfirmAction;
+use crate::theme::Theme;
 
 pub fn render(frame: &mut Frame, app: &App) {
+    let theme = Theme::from_no_color(app.config.no_color);
     match &app.modal {
-        Some(Modal::Help) => render_help(frame, app),
-        Some(Modal::Filter) => render_list(frame, app),
-        Some(Modal::Confirm(action)) => {
-            render_list(frame, app);
-            render_confirm(frame, action, app);
+        Some(Modal::Help) => render_help(frame, &theme),
+        Some(Modal::Filter) => render_list(frame, app, &theme),
+        Some(Modal::Command) => render_list(frame, app, &theme),
+        Some(Modal::CommandError(msg)) => {
+            render_list(frame, app, &theme);
+            render_command_error(frame, msg, &theme);
         }
-        Some(Modal::Details) => render_details(frame, app),
-        None => render_list(frame, app),
+        Some(Modal::Confirm(action)) => {
+            render_list(frame, app, &theme);
+            render_confirm(frame, action, &theme);
+        }
+        Some(Modal::Details) => render_details(frame, app, &theme),
+        None => render_list(frame, app, &theme),
     }
 }
 
-fn render_help(frame: &mut Frame, _app: &App) {
+fn render_help(frame: &mut Frame, theme: &Theme) {
     let popup_area = centered_rect(60, 25, frame.area());
     frame.render_widget(Clear, popup_area);
     frame.render_widget(
         Paragraph::new(
-            "Help\n\nq: quit\n?: help\n/: filter\n↑↓: scroll\nEnter: details\ns: start\nS: stop\nr: reboot",
+            "Help\n\nq: quit\n?: help\n/: filter\n:: command (switch view)\n↑↓: scroll\nEnter: details\ns: start\nS: stop\nr: reboot",
         )
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Help")
+                .border_style(Style::default().fg(theme.accent))
+                .title(Span::styled(" Help ", theme.accent_bold()))
                 .title_alignment(Alignment::Center),
         ),
         popup_area.inner(Margin::new(1, 1)),
     );
+}
+
+fn command_error_rect(w: u16, h: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Length((r.height.saturating_sub(h)) / 2),
+        Constraint::Length(h),
+        Constraint::Length((r.height.saturating_sub(h)) / 2),
+    ]);
+    let popup_area = popup_layout.split(r)[1];
+    let horizontal_layout = Layout::horizontal([
+        Constraint::Length((r.width.saturating_sub(w)) / 2),
+        Constraint::Min(w),
+        Constraint::Length((r.width.saturating_sub(w)) / 2),
+    ]);
+    horizontal_layout.split(popup_area)[1]
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -55,28 +78,46 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     horizontal_layout.split(popup_area)[1]
 }
 
-fn render_filter(frame: &mut Frame, app: &App, area: Rect) {
-    let no_color = app.config.no_color;
-
-    let slash_style = if no_color {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    };
-
+fn render_filter(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let line = Line::from(vec![
-        Span::styled(" / ", slash_style),
+        Span::styled(" / ", theme.prompt()),
         Span::raw(app.filter.clone()),
     ]);
 
-    let block = Block::default().borders(Borders::ALL);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent));
 
     frame.render_widget(Paragraph::new(line).block(block), area);
 }
 
-fn render_confirm(frame: &mut Frame, action: &ConfirmAction, _app: &App) {
+fn render_command(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let no_color = app.config.no_color;
+
+    let mut spans = vec![
+        Span::styled(" > ", theme.prompt()),
+        Span::raw(app.command.clone()),
+    ];
+
+    if let Some(suffix) = App::view_completion(&app.command) {
+        let completion_style = if no_color {
+            theme.completion_no_color()
+        } else {
+            theme.completion()
+        };
+        spans.push(Span::styled(suffix.to_string(), completion_style));
+    }
+
+    let line = Line::from(spans);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.accent));
+
+    frame.render_widget(Paragraph::new(line).block(block), area);
+}
+
+fn render_confirm(frame: &mut Frame, action: &ConfirmAction, theme: &Theme) {
     let area = frame.area();
     let msg = match action {
         ConfirmAction::Stop { node, vmid, .. } => format!("Stop {} on {}? (y/n)", vmid, node),
@@ -86,19 +127,45 @@ fn render_confirm(frame: &mut Frame, action: &ConfirmAction, _app: &App) {
         Paragraph::new(msg).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Confirm")
+                .border_style(Style::default().fg(theme.accent))
+                .title(Span::styled(" Confirm ", theme.accent_bold()))
                 .title_alignment(Alignment::Center),
         ),
         area,
     );
 }
 
-fn render_details(frame: &mut Frame, app: &App) {
-    let no_color = app.config.no_color;
+fn render_command_error(frame: &mut Frame, command: &str, theme: &Theme) {
+    let line1 = format!("`{}` command not found", command);
+    let btn = "[ Dismiss ]";
+    let max_w = line1.len().max(btn.len()) as u16 + 4;
+    let h: u16 = 6;
+    let area = command_error_rect(max_w, h, frame.area());
+    frame.render_widget(Clear, area);
+    let text = Text::from(vec![
+        Line::from(""),
+        Line::from(line1.clone()),
+        Line::from(""),
+        Line::from(Span::styled(btn, theme.accent_bg_bold())),
+    ]);
+    frame.render_widget(
+        Paragraph::new(text).alignment(Alignment::Center).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent))
+                .title(Span::styled(" Error ", theme.accent_bold()))
+                .title_alignment(Alignment::Center),
+        ),
+        area,
+    );
+}
+
+fn render_details(frame: &mut Frame, app: &App, theme: &Theme) {
     let area = centered_rect(60, 70, frame.area());
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Resource Details")
+        .border_style(Style::default().fg(theme.accent))
+        .title(Span::styled(" Resource Details ", theme.accent_bold()))
         .title_alignment(Alignment::Center);
 
     let inner = area.inner(Margin::new(1, 1));
@@ -122,7 +189,8 @@ fn render_details(frame: &mut Frame, app: &App) {
 
     let sparkline_block = Block::default()
         .borders(Borders::ALL)
-        .title("History")
+        .border_style(Style::default().fg(theme.accent))
+        .title(Span::styled(" History ", theme.accent_bold()))
         .title_alignment(Alignment::Center);
     let sparkline_inner = chunks[1].inner(Margin::new(1, 1));
     let sparkline_chunks = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
@@ -132,19 +200,11 @@ fn render_details(frame: &mut Frame, app: &App) {
     if !app.sparkline_data.cpu_history.is_empty() {
         let cpu_sparkline = Sparkline::default()
             .data(&app.sparkline_data.cpu_history)
-            .style(if no_color {
-                Style::default()
-            } else {
-                Style::default().fg(Color::Yellow)
-            });
+            .style(theme.sparkline_cpu());
         frame.render_widget(cpu_sparkline, sparkline_chunks[0]);
         let mem_sparkline = Sparkline::default()
             .data(&app.sparkline_data.mem_history)
-            .style(if no_color {
-                Style::default()
-            } else {
-                Style::default().fg(Color::Cyan)
-            });
+            .style(theme.sparkline_mem());
         frame.render_widget(mem_sparkline, sparkline_chunks[1]);
     } else {
         let fallback =
@@ -202,30 +262,19 @@ fn format_generic_details(r: &ClusterResource) -> String {
     format!("Name: {}\nType: {}\nStatus: {}", r.name, r.r#type, r.status)
 }
 
+fn view_label(view: &str) -> &str {
+    match view {
+        "node" => "Nodes",
+        "qemu" => "VMs",
+        "lxc" => "Containers",
+        "storage" => "Storage",
+        other => other,
+    }
+}
+
 const HEADER_HEIGHT: u16 = 7;
 
-const PROXMOX_ORANGE: Color = Color::Rgb(229, 112, 0);
-
-const LOGO_DARK: Color = Color::Rgb(214, 214, 214);
-
-const PROXMOX_PIXELS: [&str; 14] = [
-    "...ddd....ddd...",
-    "...dddd..dddd...",
-    "ooo.dddddddd.ooo",
-    ".ooo.dddddd.ooo.",
-    "..ooo.dddd.ooo..",
-    "...ooo.dd.ooo...",
-    "....ooo..ooo....",
-    "....ooo..ooo....",
-    "...ooo.dd.ooo...",
-    "..ooo.dddd.ooo..",
-    ".ooo.dddddd.ooo.",
-    "ooo.dddddddd.ooo",
-    "...dddd..dddd...",
-    "...ddd....ddd...",
-];
-
-fn render_header(frame: &mut Frame, app: &App, area: Rect) {
+fn render_header(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let no_color = app.config.no_color;
 
     let [info_area, keys_area, logo_area] = Layout::horizontal([
@@ -235,17 +284,13 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     ])
     .areas(area);
 
-    render_header_info(frame, app, info_area);
-    render_header_keys(frame, app, keys_area);
+    render_header_info(frame, app, info_area, theme);
+    render_header_keys(frame, keys_area, theme);
 
     let pixel = |c: char| -> Option<Color> {
         match c {
-            'o' => Some(if no_color {
-                Color::Reset
-            } else {
-                PROXMOX_ORANGE
-            }),
-            'd' => Some(if no_color { Color::Reset } else { LOGO_DARK }),
+            'o' => Some(theme.logo_primary),
+            'd' => Some(theme.logo_secondary),
             _ => None,
         }
     };
@@ -278,14 +323,8 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn render_header_info(frame: &mut Frame, app: &App, area: Rect) {
-    let no_color = app.config.no_color;
-
-    let label_style = if no_color {
-        Style::default()
-    } else {
-        Style::default().fg(Color::Cyan)
-    };
+fn render_header_info(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
+    let label_style = theme.label();
 
     let host = app.config.host.as_deref().unwrap_or("n/a");
     let user = app.config.token_id.as_deref().unwrap_or("n/a");
@@ -296,22 +335,20 @@ fn render_header_info(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let (conn_text, conn_color) = if app.connected {
-        ("Connected", Color::Green)
+        ("Connected", theme.success)
     } else {
-        ("Disconnected", Color::Red)
+        ("Disconnected", theme.danger)
     };
-    let conn_span = if no_color {
-        Span::raw(conn_text)
-    } else {
-        Span::styled(conn_text, Style::default().fg(conn_color))
-    };
+    let conn_span = Span::styled(conn_text, Style::default().fg(conn_color));
 
-    let field = |label: &'static str, value: String| {
+    let field = |label: &str, value: String| {
         Line::from(vec![
             Span::styled(format!("{label:<11}"), label_style),
             Span::raw(value),
         ])
     };
+
+    let res_label = format!("{}:", view_label(&app.view));
 
     let lines = vec![
         Line::from(vec![
@@ -322,23 +359,15 @@ fn render_header_info(frame: &mut Frame, app: &App, area: Rect) {
         field("User:", user.to_string()),
         field("Cluster:", "Proxmox VE".to_string()),
         field("Refresh:", format!("{}s", app.config.refresh_interval)),
-        field("Resources:", app.display_resources.len().to_string()),
+        field(&res_label, app.display_resources.len().to_string()),
         field("Filter:", filter),
     ];
 
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn render_header_keys(frame: &mut Frame, app: &App, area: Rect) {
-    let no_color = app.config.no_color;
-
-    let key_style = if no_color {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(Color::LightBlue)
-            .add_modifier(Modifier::BOLD)
-    };
+fn render_header_keys(frame: &mut Frame, area: Rect, theme: &Theme) {
+    let key_style = theme.key_style();
 
     let binding = |key: &'static str, label: &'static str| {
         Line::from(vec![
@@ -350,6 +379,7 @@ fn render_header_keys(frame: &mut Frame, app: &App, area: Rect) {
     let lines = vec![
         binding("<?>", "Help"),
         binding("</>", "Filter"),
+        binding("<:>", "Command"),
         binding("<enter>", "Details"),
         binding("<s>", "Start"),
         binding("<S>", "Stop"),
@@ -360,7 +390,7 @@ fn render_header_keys(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn render_list(frame: &mut Frame, app: &App) {
+fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
     let no_color = app.config.no_color;
     let area = frame.area();
     let body_area = Rect {
@@ -373,12 +403,17 @@ fn render_list(frame: &mut Frame, app: &App) {
     let [header_area, main_area] =
         Layout::vertical([Constraint::Length(HEADER_HEIGHT), Constraint::Min(0)]).areas(body_area);
 
-    render_header(frame, app, header_area);
+    render_header(frame, app, header_area, theme);
 
     let table_area = if matches!(app.modal, Some(Modal::Filter)) {
         let [filter_area, rest] =
             Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(main_area);
-        render_filter(frame, app, filter_area);
+        render_filter(frame, app, filter_area, theme);
+        rest
+    } else if matches!(app.modal, Some(Modal::Command)) {
+        let [command_area, rest] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(main_area);
+        render_command(frame, app, command_area, theme);
         rest
     } else {
         main_area
@@ -397,13 +432,7 @@ fn render_list(frame: &mut Frame, app: &App) {
     let header = Row::new(vec![
         "Type", "Name", "Node", "Status", "CPU%", "RAM", "Disk",
     ])
-    .style(if no_color {
-        Style::default()
-    } else {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    });
+    .style(theme.accent_bold());
 
     let rows: Vec<Row> = app
         .display_resources
@@ -413,9 +442,9 @@ fn render_list(frame: &mut Frame, app: &App) {
                 Style::default()
             } else {
                 match r.status.as_str() {
-                    "running" | "online" => Style::default().fg(Color::Green),
-                    "stopped" => Style::default().fg(Color::Red),
-                    _ => Style::default().fg(Color::Yellow),
+                    "running" | "online" => theme.status_running(),
+                    "stopped" => theme.status_stopped(),
+                    _ => theme.status_warning(),
                 }
             };
 
@@ -446,28 +475,25 @@ fn render_list(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent))
                 .title(Span::styled(
-                    " Resources ",
-                    if no_color {
-                        Style::default()
-                    } else {
-                        Style::default().add_modifier(Modifier::BOLD)
-                    },
+                    format!(" {} ", view_label(&app.view)),
+                    theme.accent_bold(),
                 ))
                 .title_alignment(Alignment::Center),
         )
         .row_highlight_style(if no_color {
             Style::default().add_modifier(Modifier::REVERSED)
         } else {
-            Style::default().bg(Color::Blue).fg(Color::White)
+            theme.row_highlight()
         });
 
     frame.render_stateful_widget(table, table_area, &mut table_state);
 
-    render_status_bar(frame, app);
+    render_status_bar(frame, app, theme);
 }
 
-fn render_status_bar(frame: &mut Frame, app: &App) {
+fn render_status_bar(frame: &mut Frame, app: &App, theme: &Theme) {
     let no_color = app.config.no_color;
 
     let area = frame.area();
@@ -479,9 +505,9 @@ fn render_status_bar(frame: &mut Frame, app: &App) {
     };
 
     let (conn_text, conn_color) = if app.connected {
-        ("Connected", Color::Green)
+        ("Connected", theme.success)
     } else {
-        ("Disconnected", Color::Red)
+        ("Disconnected", theme.danger)
     };
 
     let selected_text = if app.display_resources.is_empty() {
@@ -517,9 +543,11 @@ fn render_status_bar(frame: &mut Frame, app: &App) {
     let view_label = match &app.modal {
         Some(Modal::Help) => "Help",
         Some(Modal::Filter) => "Filter",
+        Some(Modal::Command) => "Command",
+        Some(Modal::CommandError(_)) => "Error",
         Some(Modal::Confirm(_)) => "Confirm",
         Some(Modal::Details) => "Details",
-        None => "Resources",
+        None => view_label(&app.view),
     };
 
     spans.push(Span::raw(" | "));
@@ -528,7 +556,7 @@ fn render_status_bar(frame: &mut Frame, app: &App) {
         if no_color {
             Style::default()
         } else {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(theme.accent)
         },
     ));
     spans.push(Span::raw(" "));
@@ -538,6 +566,23 @@ fn render_status_bar(frame: &mut Frame, app: &App) {
     let paragraph = Paragraph::new(Text::from(line));
     frame.render_widget(paragraph, status_area);
 }
+
+const PROXMOX_PIXELS: [&str; 14] = [
+    "...ddd....ddd...",
+    "...dddd..dddd...",
+    "ooo.dddddddd.ooo",
+    ".ooo.dddddd.ooo.",
+    "..ooo.dddd.ooo..",
+    "...ooo.dd.ooo...",
+    "....ooo..ooo....",
+    "....ooo..ooo....",
+    "...ooo.dd.ooo...",
+    "..ooo.dddd.ooo..",
+    ".ooo.dddddd.ooo.",
+    "ooo.dddddddd.ooo",
+    "...dddd..dddd...",
+    "...ddd....ddd...",
+];
 
 fn format_memory(used: Option<u64>, total: Option<u64>) -> String {
     match (used, total) {
@@ -556,5 +601,45 @@ fn format_disk(used: Option<u64>, total: Option<u64>) -> String {
             )
         }
         _ => "-".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_label_maps_known_types() {
+        assert_eq!(view_label("node"), "Nodes");
+        assert_eq!(view_label("qemu"), "VMs");
+        assert_eq!(view_label("lxc"), "Containers");
+        assert_eq!(view_label("storage"), "Storage");
+    }
+
+    #[test]
+    fn view_label_passes_through_unknown() {
+        assert_eq!(view_label("sdn"), "sdn");
+    }
+
+    #[test]
+    fn theme_default_has_blue_accent() {
+        let t = Theme::default_theme();
+        assert_eq!(t.accent, Color::Blue);
+    }
+
+    #[test]
+    fn theme_no_color_uses_reset() {
+        let t = Theme::no_color();
+        assert_eq!(t.accent, Color::Reset);
+        assert_eq!(t.success, Color::Reset);
+        assert_eq!(t.danger, Color::Reset);
+    }
+
+    #[test]
+    fn theme_from_no_color_flag() {
+        let colored = Theme::from_no_color(false);
+        assert_eq!(colored.accent, Color::Blue);
+        let plain = Theme::from_no_color(true);
+        assert_eq!(plain.accent, Color::Reset);
     }
 }

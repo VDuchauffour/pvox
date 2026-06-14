@@ -2,6 +2,7 @@ pub mod app;
 pub mod client;
 pub mod config;
 pub mod event;
+pub mod theme;
 pub mod tui;
 pub mod ui;
 
