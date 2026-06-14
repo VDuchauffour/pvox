@@ -1,36 +1,59 @@
-# my-rust-project
+# Metron
 
-A Rust project
+A k9s-like terminal UI for Proxmox VE clusters.
 
 ## Features
 
-- **CLI parsing** with [`clap`](https://github.com/clap-rs/clap)
-- **Error handling** with [`anyhow`](https://github.com/dtijv/anyhow)
-- **Dev container** with Rust, `just`, `cargo-tarpaulin`, and `pre-commit`
-- **CI/CD** via GitHub Actions (format, lint, test, coverage, draft releases)
-- **Task runner** via [`just`](https://github.com/casey/just)
-- **Pre-commit hooks** for formatting and linting
-- **Renovate** config for automated dependency updates
+- Real-time resource list (nodes, VMs, LXC, storage)
+- Lifecycle actions: start, stop, reboot
+- Color-coded status indicators
+- Keyboard-driven navigation
+- Live filter search
+- Resource detail views
 
-## Getting Started
+## Installation
 
-### Development
-
-```sh
-just install
+```bash
+cargo install --path .
 ```
 
-Common tasks:
+## Usage
 
-```sh
-just        # list all recipes
-just run    # cargo run
-just test   # cargo test
-just ci     # fmt-check + lint-strict + test
+```bash
+metron --host https://pve.local --token-id root@pam!metron --token abc123 --insecure
 ```
 
-### Release
+## Key Bindings
 
-1. Push a tag: `git tag -a v0.1.0 -m "Release v0.1.0" && git push origin v0.1.0`
-2. The [release-drafter](.github/workflows/release-drafter.yml) workflow auto-drafts release notes on every push to `main`.
+- `q` — Quit
+- `?` — Help
+- `/` — Filter
+- `↑/↓` — Navigate
+- `Enter` — View details
+- `s` — Start VM/CT
+- `S` — Stop VM/CT (confirm)
+- `r` — Reboot VM/CT (confirm)
+- `Esc` — Close modal / Cancel
 
+## Configuration
+
+Create `~/.metron/config.yaml`:
+
+```yaml
+host: https://pve.local
+token_id: root@pam!metron
+token: abc123
+insecure: true
+refresh_interval: 5
+no_color: false
+```
+
+## CLI Flags
+
+```bash
+metron --help
+```
+
+## Environment
+
+- `METRON_TOKEN` — API token secret fallback
