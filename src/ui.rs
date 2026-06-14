@@ -441,7 +441,14 @@ fn render_list(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Resources")
+                .title(Span::styled(
+                    " Resources ",
+                    if no_color {
+                        Style::default()
+                    } else {
+                        Style::default().add_modifier(Modifier::BOLD)
+                    },
+                ))
                 .title_alignment(Alignment::Center),
         )
         .row_highlight_style(if no_color {
