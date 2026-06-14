@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 use super::layout::{centered_rect, command_error_rect};
+use crate::api::ClusterResource;
 use crate::app::App;
-use crate::client::ClusterResource;
 use crate::event::ConfirmAction;
 use crate::theme::Theme;
 

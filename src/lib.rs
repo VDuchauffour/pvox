@@ -1,5 +1,5 @@
+pub mod api;
 pub mod app;
-pub mod client;
 pub mod config;
 pub mod event;
 pub mod theme;
@@ -14,8 +14,8 @@ use crossterm::event::Event;
 use futures::StreamExt;
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::api::{ProxmoxClient, TaskStatus};
 use crate::app::App;
-use crate::client::{ProxmoxClient, TaskStatus};
 use crate::config::Config;
 use crate::event::{AppEvent, LifecycleAction};
 use crate::tui::Tui;
@@ -135,7 +135,7 @@ pub async fn run(config: Config) -> Result<()> {
                                         } else if kind == "lxc" {
                                             client.lxc_start(&node, vmid).await
                                         } else {
-                                            Err(crate::client::ProxmoxError::Api(format!(
+                                            Err(crate::api::ProxmoxError::Api(format!(
                                                 "Unsupported resource type for start: {}",
                                                 kind
                                             )))
@@ -147,7 +147,7 @@ pub async fn run(config: Config) -> Result<()> {
                                         } else if kind == "lxc" {
                                             client.lxc_stop(&node, vmid).await
                                         } else {
-                                            Err(crate::client::ProxmoxError::Api(format!(
+                                            Err(crate::api::ProxmoxError::Api(format!(
                                                 "Unsupported resource type for stop: {}",
                                                 kind
                                             )))
@@ -159,7 +159,7 @@ pub async fn run(config: Config) -> Result<()> {
                                         } else if kind == "lxc" {
                                             client.lxc_reboot(&node, vmid).await
                                         } else {
-                                            Err(crate::client::ProxmoxError::Api(format!(
+                                            Err(crate::api::ProxmoxError::Api(format!(
                                                 "Unsupported resource type for reboot: {}",
                                                 kind
                                             )))

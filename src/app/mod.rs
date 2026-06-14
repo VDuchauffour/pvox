@@ -9,7 +9,7 @@ pub use command::view_completion;
 pub use modal::Modal;
 pub use sparkline::SparkLineData;
 
-use crate::client::ClusterResource;
+use crate::api::ClusterResource;
 use crate::config::Config;
 
 pub struct App {
@@ -23,7 +23,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub connected: bool,
     pub config: Config,
-    pub client: Option<Arc<crate::client::ProxmoxClient>>,
+    pub client: Option<Arc<crate::api::ProxmoxClient>>,
     pub pending_upids: Vec<String>,
     pub sparkline_data: SparkLineData,
     pub proxmox_version: String,
@@ -37,7 +37,7 @@ impl App {
         let client = if let (Some(host), Some(token_id), Some(token)) =
             (&config.host, &config.token_id, &config.token)
         {
-            Some(Arc::new(crate::client::ProxmoxClient::new(
+            Some(Arc::new(crate::api::ProxmoxClient::new(
                 host,
                 token_id,
                 token,

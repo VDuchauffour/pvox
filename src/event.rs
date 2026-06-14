@@ -1,6 +1,6 @@
 use crossterm::event::KeyEvent;
 
-use crate::client::ClusterResource;
+use crate::api::ClusterResource;
 
 #[derive(Clone, Debug)]
 pub enum ConfirmAction {
