@@ -1,6 +1,9 @@
 _default:
     @just --list
 
+pre-commit-install:
+    uvx pre-commit install
+
 build:
     cargo build
 
@@ -46,3 +49,6 @@ clean:
 
 update:
     cargo update
+
+setup-proxmox:
+    uv run --with proxmoxer  scripts/setup-proxmox.py

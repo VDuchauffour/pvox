@@ -47,3 +47,22 @@ Options:
 
 
 ```
+
+### Development
+
+To ensure that you follow the development workflow, please setup the pre-commit hooks:
+
+```sh
+just pre-commit-install
+```
+
+> **Note:** This requires [`uv`](https://github.com/astral-sh/uv) to be installed, as the hooks are run via `uvx pre-commit`.
+
+Common tasks:
+
+```sh
+just      # list all recipes
+just run  # cargo run
+just test # cargo test
+just ci   # fmt-check + lint-strict + test
+```
