@@ -17,6 +17,7 @@ pub struct App {
     pub tasks: Vec<ClusterResource>,
     pub replication: Vec<ClusterResource>,
     pub ha: Vec<ClusterResource>,
+    pub backups: Vec<ClusterResource>,
     pub selected_index: usize,
     pub filter: String,
     pub command: String,
@@ -55,6 +56,7 @@ impl App {
             tasks: Vec::new(),
             replication: Vec::new(),
             ha: Vec::new(),
+            backups: Vec::new(),
             selected_index: 0,
             filter: String::new(),
             command: String::new(),
@@ -99,6 +101,7 @@ impl App {
             "task" => &self.tasks,
             "replication" => &self.replication,
             "ha" => &self.ha,
+            "backup" => &self.backups,
             _ => &self.resources,
         };
         self.display_resources = source
@@ -161,6 +164,14 @@ impl App {
             .selected_index
             .min(self.display_resources.len().saturating_sub(1));
     }
+
+    pub fn set_backups(&mut self, backups: Vec<ClusterResource>) {
+        self.backups = backups;
+        self.update_display_resources();
+        self.selected_index = self
+            .selected_index
+            .min(self.display_resources.len().saturating_sub(1));
+    }
 }
 
 #[cfg(test)]
@@ -195,6 +206,9 @@ mod tests {
             group: None,
             max_restart: None,
             max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
         }
     }
 
@@ -314,6 +328,9 @@ mod tests {
             group: None,
             max_restart: None,
             max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
         }]);
 
         app.view = "task".to_string();
@@ -349,6 +366,9 @@ mod tests {
             group: None,
             max_restart: None,
             max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
         }]);
 
         app.view = "replication".to_string();
@@ -384,12 +404,53 @@ mod tests {
             group: Some("prod".to_string()),
             max_restart: Some(1),
             max_relocate: Some(1),
+            enabled: None,
+            storage: None,
+            mode: None,
         }]);
 
         app.view = "ha".to_string();
         app.update_display_resources();
         assert_eq!(app.filtered_resources().len(), 1);
         assert_eq!(app.filtered_resources()[0].r#type, "ha");
+    }
+
+    #[test]
+    fn test_view_switch_to_backups() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+        app.set_backups(vec![ClusterResource {
+            id: "backup-100".to_string(),
+            r#type: "backup".to_string(),
+            name: "[vm] 100".to_string(),
+            node: Some("pve".to_string()),
+            status: "enabled".to_string(),
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: Some("0 2 * * *".to_string()),
+            target: None,
+            disable: Some(false),
+            group: None,
+            max_restart: None,
+            max_relocate: None,
+            enabled: Some(true),
+            storage: Some("local".to_string()),
+            mode: Some("stop".to_string()),
+        }]);
+
+        app.view = "backup".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "backup");
     }
 
     #[test]
@@ -1127,6 +1188,8 @@ mod tests {
         assert_eq!(resolve_view("replication"), Some("replication".to_string()));
         assert_eq!(resolve_view("repl"), Some("replication".to_string()));
         assert_eq!(resolve_view("ha"), Some("ha".to_string()));
+        assert_eq!(resolve_view("backup"), Some("backup".to_string()));
+        assert_eq!(resolve_view("backups"), Some("backup".to_string()));
         assert_eq!(resolve_view(""), None);
         assert_eq!(resolve_view("unknown"), None);
     }
@@ -1198,6 +1261,7 @@ mod tests {
         assert_eq!(view_completion("ta"), Some("sk"));
         assert_eq!(view_completion("re"), Some("plication"));
         assert_eq!(view_completion("h"), Some("a"));
+        assert_eq!(view_completion("ba"), Some("ckup"));
     }
 
     #[test]

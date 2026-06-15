@@ -67,6 +67,9 @@ pub async fn run(config: Config) -> Result<()> {
                     AppEvent::HaSnapshot(ha) => {
                         app.set_ha(ha);
                     }
+                    AppEvent::BackupSnapshot(backups) => {
+                        app.set_backups(backups);
+                    }
                     AppEvent::VersionSnapshot(version) => {
                         app.proxmox_version = version;
                     }
@@ -234,6 +237,14 @@ fn spawn_polling_task(
             match client.fetch_ha_resources().await {
                 Ok(ha) => {
                     let _ = tx.send(AppEvent::HaSnapshot(ha));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppEvent::ApiError(e.to_string()));
+                }
+            }
+            match client.fetch_backups().await {
+                Ok(backups) => {
+                    let _ = tx.send(AppEvent::BackupSnapshot(backups));
                 }
                 Err(e) => {
                     let _ = tx.send(AppEvent::ApiError(e.to_string()));

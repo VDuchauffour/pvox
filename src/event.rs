@@ -44,6 +44,7 @@ pub enum AppEvent {
     TaskSnapshot(Vec<ClusterResource>),
     ReplicationSnapshot(Vec<ClusterResource>),
     HaSnapshot(Vec<ClusterResource>),
+    BackupSnapshot(Vec<ClusterResource>),
     VersionSnapshot(String),
     WhoAmiSnapshot(String),
     ApiError(String),

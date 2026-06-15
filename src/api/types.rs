@@ -48,6 +48,12 @@ pub struct ClusterResource {
     pub max_restart: Option<u32>,
     #[serde(default)]
     pub max_relocate: Option<u32>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub storage: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -99,6 +105,9 @@ impl ClusterTask {
             group: None,
             max_restart: None,
             max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
         }
     }
 }
@@ -148,6 +157,9 @@ impl ClusterReplication {
             group: None,
             max_restart: None,
             max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
         }
     }
 }
@@ -205,6 +217,79 @@ impl ClusterHaResource {
             } else {
                 Some(self.max_relocate)
             },
+            enabled: None,
+            storage: None,
+            mode: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ClusterBackup {
+    pub id: String,
+    #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
+    pub schedule: String,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub storage: String,
+    #[serde(default)]
+    pub node: String,
+    #[serde(default)]
+    pub vmid: String,
+}
+
+impl ClusterBackup {
+    pub fn into_resource(self) -> ClusterResource {
+        ClusterResource {
+            id: self.id.clone(),
+            r#type: "backup".to_string(),
+            name: format!("[{}] {}", self.r#type, self.vmid),
+            node: if self.node.is_empty() {
+                None
+            } else {
+                Some(self.node.clone())
+            },
+            status: if self.enabled {
+                "enabled".to_string()
+            } else {
+                "disabled".to_string()
+            },
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: if self.schedule.is_empty() {
+                None
+            } else {
+                Some(self.schedule)
+            },
+            target: None,
+            disable: Some(!self.enabled),
+            group: None,
+            max_restart: None,
+            max_relocate: None,
+            enabled: Some(self.enabled),
+            storage: if self.storage.is_empty() {
+                None
+            } else {
+                Some(self.storage)
+            },
+            mode: if self.mode.is_empty() {
+                None
+            } else {
+                Some(self.mode)
+            },
         }
     }
 }
@@ -226,6 +311,7 @@ impl ClusterResource {
             "task" => self.format_task_details(),
             "replication" => self.format_replication_details(),
             "ha" => self.format_ha_details(),
+            "backup" => self.format_backup_details(),
             _ => self.format_generic_details(),
         }
     }
@@ -331,6 +417,25 @@ impl ClusterResource {
         }
         if let Some(max_relocate) = self.max_relocate {
             s.push_str(&format!("\nMax relocate: {max_relocate}"));
+        }
+        s
+    }
+
+    fn format_backup_details(&self) -> String {
+        let mut s = format!(
+            "Backup: {}\nNode: {}\nStatus: {}",
+            self.name,
+            self.node.as_ref().unwrap_or(&"N/A".to_string()),
+            self.status
+        );
+        if let Some(schedule) = &self.schedule {
+            s.push_str(&format!("\nSchedule: {schedule}"));
+        }
+        if let Some(storage) = &self.storage {
+            s.push_str(&format!("\nStorage: {storage}"));
+        }
+        if let Some(mode) = &self.mode {
+            s.push_str(&format!("\nMode: {mode}"));
         }
         s
     }

@@ -2,8 +2,8 @@ use reqwest::Client;
 
 use super::error::ProxmoxError;
 use super::types::{
-    ClusterHaResource, ClusterReplication, ClusterResource, ClusterTask, PveVersion, RrdDataPoint,
-    TaskStatus, WhoAmI,
+    ClusterBackup, ClusterHaResource, ClusterReplication, ClusterResource, ClusterTask, PveVersion,
+    RrdDataPoint, TaskStatus, WhoAmI,
 };
 
 pub struct ProxmoxClient {
@@ -91,6 +91,21 @@ impl ProxmoxClient {
             .map_err(|e| ProxmoxError::Api(format!("Failed to parse HA resource: {e}")))?
             .into_iter()
             .map(ClusterHaResource::into_resource)
+            .collect())
+    }
+
+    pub async fn fetch_backups(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let data = self.get_data("/api2/json/cluster/backup").await?;
+        let array = data
+            .as_array()
+            .ok_or_else(|| ProxmoxError::Api("Expected array response".into()))?;
+        Ok(array
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterBackup>(v.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ProxmoxError::Api(format!("Failed to parse backup: {e}")))?
+            .into_iter()
+            .map(ClusterBackup::into_resource)
             .collect())
     }
 
@@ -583,6 +598,48 @@ mod tests {
         assert_eq!(ha[0].group.as_deref(), Some("production"));
         assert_eq!(ha[1].status, "stopped");
         assert_eq!(ha[1].group, None);
+    }
+
+    #[test]
+    fn test_parse_backup_jobs() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "id": "backup-100",
+                    "type": "vm",
+                    "vmid": "100",
+                    "schedule": "0 2 * * *",
+                    "enabled": true,
+                    "mode": "stop",
+                    "storage": "local",
+                    "node": "pve"
+                },
+                {
+                    "id": "backup-200",
+                    "type": "ct",
+                    "vmid": "200",
+                    "schedule": "0 3 * * 0",
+                    "enabled": false,
+                    "mode": "suspend",
+                    "storage": "local",
+                    "node": "pve"
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let backups: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterBackup>(v.clone()).unwrap())
+            .map(ClusterBackup::into_resource)
+            .collect();
+
+        assert_eq!(backups.len(), 2);
+        assert_eq!(backups[0].r#type, "backup");
+        assert_eq!(backups[0].name, "[vm] 100");
+        assert_eq!(backups[0].status, "enabled");
+        assert_eq!(backups[1].status, "disabled");
+        assert_eq!(backups[1].storage.as_deref(), Some("local"));
     }
 
     #[tokio::test]
