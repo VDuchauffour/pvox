@@ -219,7 +219,15 @@ def assign_pools(pve, created_cts):
         + [ct["vmid"] for ct in created_cts if ct["vmid"] == 205],
     }
     for poolid, vmids in pool_assignments.items():
+        try:
+            members = pve.pools(poolid).get().get("members", [])
+            assigned = {m.get("vmid") for m in members}
+        except Exception:
+            assigned = set()
         for vmid in vmids:
+            if vmid in assigned:
+                print(f"  Skipping {vmid} -> {poolid}: already a member")
+                continue
             try:
                 pve.pools(poolid).put(vms=vmid)
                 print(f"  Assigned {vmid} -> {poolid}")
@@ -254,11 +262,11 @@ def create_sdn(pve, existing):
     print("\n[6/11] Creating SDN zones and VNets...")
     created_sdn = []
     sdn_zones = [
-        {"zone": "vlan-zone", "type": "vlan", "peers": "pve"},
+        {"zone": "vlanz", "type": "vlan", "bridge": "vmbr0"},
     ]
     sdn_vnets = [
-        {"vnet": "prod-net", "zone": "vlan-zone", "tag": 100},
-        {"vnet": "dev-net", "zone": "vlan-zone", "tag": 200},
+        {"vnet": "prodnet", "zone": "vlanz", "tag": 100},
+        {"vnet": "devnet", "zone": "vlanz", "tag": 200},
     ]
     for zone in sdn_zones:
         create_if_missing(
@@ -288,8 +296,8 @@ def create_replication(pve, existing):
     print("\n[7/11] Creating replication jobs...")
     created_replication = []
     replication_jobs = [
-        {"id": "100-0", "type": "local", "target": "pve", "vmid": 100, "schedule": "*/15"},
-        {"id": "102-0", "type": "local", "target": "pve", "vmid": 102, "schedule": "0 2 * * *"},
+        {"id": "100-0", "type": "local", "target": "pve", "schedule": "*/15"},
+        {"id": "102-0", "type": "local", "target": "pve", "schedule": "02:00"},
     ]
     for job in replication_jobs:
         create_if_missing(
@@ -306,9 +314,9 @@ def trigger_tasks(node):
     print("\n[8/11] Triggering cluster tasks...")
     created_tasks = []
     actions = [
-        (100, "reboot", node.qemu(100).status.reboot.post),
-        (102, "shutdown", node.qemu(102).status.shutdown.post),
-        (104, "start", node.qemu(104).status.start.post),
+        (103, "start", node.qemu(103).status.start.post),
+        (105, "start", node.qemu(105).status.start.post),
+        (107, "start", node.qemu(107).status.start.post),
     ]
     for vmid, action_name, action_fn in actions:
         try:
@@ -323,10 +331,19 @@ def trigger_tasks(node):
 def create_ha_resources(pve, existing):
     print("\n[9/11] Creating HA resources...")
     created_ha = []
+    ha_groups = [
+        {"group": "prodgrp", "nodes": "pve"},
+    ]
+    for group in ha_groups:
+        try:
+            pve.cluster.ha.groups.create(**group)
+            print(f"  Created HA group: {group['group']}")
+        except Exception as e:
+            print(f"  Warning: HA group {group['group']} issue: {e}")
     ha_resources = [
-        {"sid": "vm:100", "type": "vm", "state": "started", "node": "pve", "group": "production", "max_restart": 1, "max_relocate": 1},
-        {"sid": "vm:102", "type": "vm", "state": "started", "node": "pve", "group": "production", "max_restart": 1, "max_relocate": 1},
-        {"sid": "ct:200", "type": "ct", "state": "stopped", "node": "pve", "group": "staging"},
+        {"sid": "vm:100", "state": "started", "group": "prodgrp", "max_restart": 1, "max_relocate": 1},
+        {"sid": "vm:102", "state": "started", "group": "prodgrp", "max_restart": 1, "max_relocate": 1},
+        {"sid": "vm:104", "state": "stopped", "group": "prodgrp"},
     ]
     for ha in ha_resources:
         create_if_missing(
@@ -343,8 +360,8 @@ def create_backups(pve, existing):
     print("\n[10/11] Creating backup jobs...")
     created_backups = []
     backups = [
-        {"id": "backup-vm-100", "type": "vm", "vmid": "100", "schedule": "0 2 * * *", "enabled": 1, "mode": "stop", "storage": "local", "node": "pve"},
-        {"id": "backup-vm-102", "type": "vm", "vmid": "102", "schedule": "0 3 * * 0", "enabled": 1, "mode": "suspend", "storage": "local", "node": "pve"},
+        {"id": "backup-vm-100", "vmid": "100", "schedule": "02:00", "enabled": 1, "mode": "stop", "storage": "local"},
+        {"id": "backup-vm-102", "vmid": "102", "schedule": "sun 03:00", "enabled": 1, "mode": "suspend", "storage": "local"},
     ]
     for backup in backups:
         create_if_missing(
