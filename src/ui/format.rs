@@ -3,6 +3,13 @@ pub fn view_label(view: &str) -> &str {
     match view {
         "qemu" => "VMs",
         "lxc" => "containers",
+        "pool" => "pools",
+        "sdn" => "SDN",
+        "task" => "tasks",
+        "replication" => "replication",
+        "ha" => "HA",
+        "backup" => "backups",
+        "disk" => "disks",
         other => other,
     }
 }
@@ -39,10 +46,17 @@ mod tests {
         assert_eq!(view_label("qemu"), "VMs");
         assert_eq!(view_label("lxc"), "containers");
         assert_eq!(view_label("storage"), "storage");
+        assert_eq!(view_label("pool"), "pools");
+        assert_eq!(view_label("sdn"), "SDN");
+        assert_eq!(view_label("task"), "tasks");
+        assert_eq!(view_label("replication"), "replication");
+        assert_eq!(view_label("ha"), "HA");
+        assert_eq!(view_label("backup"), "backups");
+        assert_eq!(view_label("disk"), "disks");
     }
 
     #[test]
     fn view_label_passes_through_unknown() {
-        assert_eq!(view_label("sdn"), "sdn");
+        assert_eq!(view_label("custom"), "custom");
     }
 }

@@ -14,6 +14,11 @@ use crate::config::Config;
 
 pub struct App {
     pub resources: Vec<ClusterResource>,
+    pub tasks: Vec<ClusterResource>,
+    pub replication: Vec<ClusterResource>,
+    pub ha: Vec<ClusterResource>,
+    pub backups: Vec<ClusterResource>,
+    pub disks: Vec<ClusterResource>,
     pub selected_index: usize,
     pub filter: String,
     pub command: String,
@@ -49,6 +54,11 @@ impl App {
 
         let mut app = Self {
             resources: Vec::new(),
+            tasks: Vec::new(),
+            replication: Vec::new(),
+            ha: Vec::new(),
+            backups: Vec::new(),
+            disks: Vec::new(),
             selected_index: 0,
             filter: String::new(),
             command: String::new(),
@@ -89,8 +99,15 @@ impl App {
 
     pub fn update_display_resources(&mut self) {
         let f = self.filter.to_lowercase();
-        self.display_resources = self
-            .resources
+        let source = match self.view.as_str() {
+            "task" => &self.tasks,
+            "replication" => &self.replication,
+            "ha" => &self.ha,
+            "backup" => &self.backups,
+            "disk" => &self.disks,
+            _ => &self.resources,
+        };
+        self.display_resources = source
             .iter()
             .filter(|r| r.r#type == self.view)
             .filter(|r| {
@@ -126,6 +143,46 @@ impl App {
                 .min(self.display_resources.len().saturating_sub(1));
         }
     }
+
+    pub fn set_tasks(&mut self, tasks: Vec<ClusterResource>) {
+        self.tasks = tasks;
+        self.update_display_resources();
+        self.selected_index = self
+            .selected_index
+            .min(self.display_resources.len().saturating_sub(1));
+    }
+
+    pub fn set_replication(&mut self, replication: Vec<ClusterResource>) {
+        self.replication = replication;
+        self.update_display_resources();
+        self.selected_index = self
+            .selected_index
+            .min(self.display_resources.len().saturating_sub(1));
+    }
+
+    pub fn set_ha(&mut self, ha: Vec<ClusterResource>) {
+        self.ha = ha;
+        self.update_display_resources();
+        self.selected_index = self
+            .selected_index
+            .min(self.display_resources.len().saturating_sub(1));
+    }
+
+    pub fn set_backups(&mut self, backups: Vec<ClusterResource>) {
+        self.backups = backups;
+        self.update_display_resources();
+        self.selected_index = self
+            .selected_index
+            .min(self.display_resources.len().saturating_sub(1));
+    }
+
+    pub fn set_disks(&mut self, disks: Vec<ClusterResource>) {
+        self.disks = disks;
+        self.update_display_resources();
+        self.selected_index = self
+            .selected_index
+            .min(self.display_resources.len().saturating_sub(1));
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +208,21 @@ mod tests {
             disk: None,
             maxdisk: None,
             uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: None,
+            target: None,
+            disable: None,
+            group: None,
+            max_restart: None,
+            max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
+            model: None,
+            serial: None,
+            wearout: None,
         }
     }
 
@@ -220,6 +292,232 @@ mod tests {
         app.update_display_resources();
         assert_eq!(app.filtered_resources().len(), 1);
         assert_eq!(app.filtered_resources()[0].name, "ct1");
+    }
+
+    #[test]
+    fn test_view_switch_to_pool_and_sdn() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![
+            mock_resource("prod", "pool", None),
+            mock_resource("vlan", "sdn", None),
+            mock_resource("vm1", "qemu", Some("pve1")),
+        ]);
+
+        app.view = "pool".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "pool");
+
+        app.view = "sdn".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "sdn");
+    }
+
+    #[test]
+    fn test_view_switch_to_tasks_uses_task_source() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+        app.set_tasks(vec![ClusterResource {
+            id: "UPID:pve:00000000:00000000:RUNNING:vmstart:100:root@pam:".to_string(),
+            r#type: "task".to_string(),
+            name: "vmstart".to_string(),
+            node: Some("pve".to_string()),
+            status: "running".to_string(),
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: Some(1_700_000_000),
+            endtime: None,
+            user: Some("root@pam".to_string()),
+            schedule: None,
+            target: None,
+            disable: None,
+            group: None,
+            max_restart: None,
+            max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
+            model: None,
+            serial: None,
+            wearout: None,
+        }]);
+
+        app.view = "task".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "task");
+    }
+
+    #[test]
+    fn test_view_switch_to_replication() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+        app.set_replication(vec![ClusterResource {
+            id: "100-0".to_string(),
+            r#type: "replication".to_string(),
+            name: "[local] 100 -> pve2".to_string(),
+            node: Some("pve".to_string()),
+            status: "enabled".to_string(),
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: Some("*/15".to_string()),
+            target: Some("pve2".to_string()),
+            disable: Some(false),
+            group: None,
+            max_restart: None,
+            max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
+            model: None,
+            serial: None,
+            wearout: None,
+        }]);
+
+        app.view = "replication".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "replication");
+    }
+
+    #[test]
+    fn test_view_switch_to_ha() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+        app.set_ha(vec![ClusterResource {
+            id: "vm:100".to_string(),
+            r#type: "ha".to_string(),
+            name: "[vm] vm:100".to_string(),
+            node: Some("pve".to_string()),
+            status: "started".to_string(),
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: None,
+            target: None,
+            disable: None,
+            group: Some("prod".to_string()),
+            max_restart: Some(1),
+            max_relocate: Some(1),
+            enabled: None,
+            storage: None,
+            mode: None,
+            model: None,
+            serial: None,
+            wearout: None,
+        }]);
+
+        app.view = "ha".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "ha");
+    }
+
+    #[test]
+    fn test_view_switch_to_backups() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+        app.set_backups(vec![ClusterResource {
+            id: "backup-100".to_string(),
+            r#type: "backup".to_string(),
+            name: "[vm] 100".to_string(),
+            node: Some("pve".to_string()),
+            status: "enabled".to_string(),
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: Some("0 2 * * *".to_string()),
+            target: None,
+            disable: Some(false),
+            group: None,
+            max_restart: None,
+            max_relocate: None,
+            enabled: Some(true),
+            storage: Some("local".to_string()),
+            mode: Some("stop".to_string()),
+            model: None,
+            serial: None,
+            wearout: None,
+        }]);
+
+        app.view = "backup".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "backup");
+    }
+
+    #[test]
+    fn test_view_switch_to_disks() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+        app.set_disks(vec![ClusterResource {
+            id: "/dev/sda".to_string(),
+            r#type: "disk".to_string(),
+            name: "Samsung SSD".to_string(),
+            node: Some("pve".to_string()),
+            status: "PASSED".to_string(),
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: Some(1_000_000_000_000),
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: None,
+            target: None,
+            disable: None,
+            group: None,
+            max_restart: None,
+            max_relocate: None,
+            enabled: None,
+            storage: None,
+            mode: None,
+            model: Some("Samsung SSD".to_string()),
+            serial: Some("ABC123".to_string()),
+            wearout: Some(95),
+        }]);
+
+        app.view = "disk".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "disk");
     }
 
     #[test]
@@ -948,8 +1246,21 @@ mod tests {
         assert_eq!(resolve_view("lxc"), Some("lxc".to_string()));
         assert_eq!(resolve_view("storage"), Some("storage".to_string()));
         assert_eq!(resolve_view("storages"), Some("storage".to_string()));
+        assert_eq!(resolve_view("pool"), Some("pool".to_string()));
+        assert_eq!(resolve_view("pools"), Some("pool".to_string()));
+        assert_eq!(resolve_view("sdn"), Some("sdn".to_string()));
+        assert_eq!(resolve_view("sdns"), Some("sdn".to_string()));
+        assert_eq!(resolve_view("task"), Some("task".to_string()));
+        assert_eq!(resolve_view("tasks"), Some("task".to_string()));
+        assert_eq!(resolve_view("replication"), Some("replication".to_string()));
+        assert_eq!(resolve_view("repl"), Some("replication".to_string()));
+        assert_eq!(resolve_view("ha"), Some("ha".to_string()));
+        assert_eq!(resolve_view("backup"), Some("backup".to_string()));
+        assert_eq!(resolve_view("backups"), Some("backup".to_string()));
+        assert_eq!(resolve_view("disk"), Some("disk".to_string()));
+        assert_eq!(resolve_view("disks"), Some("disk".to_string()));
         assert_eq!(resolve_view(""), None);
-        assert_eq!(resolve_view("sdn"), None);
+        assert_eq!(resolve_view("unknown"), None);
     }
 
     #[test]
@@ -1014,6 +1325,13 @@ mod tests {
         assert_eq!(view_completion("ct"), Some(""));
         assert_eq!(view_completion("l"), Some("xc"));
         assert_eq!(view_completion("st"), Some("orage"));
+        assert_eq!(view_completion("po"), Some("ol"));
+        assert_eq!(view_completion("sd"), Some("n"));
+        assert_eq!(view_completion("ta"), Some("sk"));
+        assert_eq!(view_completion("re"), Some("plication"));
+        assert_eq!(view_completion("h"), Some("a"));
+        assert_eq!(view_completion("ba"), Some("ckup"));
+        assert_eq!(view_completion("di"), Some("sk"));
     }
 
     #[test]

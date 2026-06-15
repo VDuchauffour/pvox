@@ -1,7 +1,10 @@
 use reqwest::Client;
 
 use super::error::ProxmoxError;
-use super::types::{ClusterResource, PveVersion, RrdDataPoint, TaskStatus, WhoAmI};
+use super::types::{
+    ClusterBackup, ClusterHaResource, ClusterReplication, ClusterResource, ClusterTask, NodeDisk,
+    PveVersion, RrdDataPoint, TaskStatus, WhoAmI,
+};
 
 pub struct ProxmoxClient {
     client: Client,
@@ -44,6 +47,105 @@ impl ProxmoxClient {
             r.normalize();
         }
         Ok(resources)
+    }
+
+    pub async fn fetch_cluster_tasks(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let data = self.get_data("/api2/json/cluster/tasks").await?;
+        let array = data
+            .as_array()
+            .ok_or_else(|| ProxmoxError::Api("Expected array response".into()))?;
+        Ok(array
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterTask>(v.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ProxmoxError::Api(format!("Failed to parse task: {e}")))?
+            .into_iter()
+            .map(ClusterTask::into_resource)
+            .collect())
+    }
+
+    pub async fn fetch_replication(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let data = self.get_data("/api2/json/cluster/replication").await?;
+        let array = data
+            .as_array()
+            .ok_or_else(|| ProxmoxError::Api("Expected array response".into()))?;
+        Ok(array
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterReplication>(v.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ProxmoxError::Api(format!("Failed to parse replication: {e}")))?
+            .into_iter()
+            .map(ClusterReplication::into_resource)
+            .collect())
+    }
+
+    pub async fn fetch_ha_resources(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let data = self.get_data("/api2/json/cluster/ha/resources").await?;
+        let array = data
+            .as_array()
+            .ok_or_else(|| ProxmoxError::Api("Expected array response".into()))?;
+        Ok(array
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterHaResource>(v.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ProxmoxError::Api(format!("Failed to parse HA resource: {e}")))?
+            .into_iter()
+            .map(ClusterHaResource::into_resource)
+            .collect())
+    }
+
+    pub async fn fetch_backups(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let data = self.get_data("/api2/json/cluster/backup").await?;
+        let array = data
+            .as_array()
+            .ok_or_else(|| ProxmoxError::Api("Expected array response".into()))?;
+        Ok(array
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterBackup>(v.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ProxmoxError::Api(format!("Failed to parse backup: {e}")))?
+            .into_iter()
+            .map(ClusterBackup::into_resource)
+            .collect())
+    }
+
+    pub async fn fetch_node_disks(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let nodes_data = self.get_data("/api2/json/nodes").await?;
+        let nodes = nodes_data
+            .as_array()
+            .ok_or_else(|| ProxmoxError::Api("Expected nodes array".into()))?;
+        let mut disks: Vec<ClusterResource> = Vec::new();
+        for node in nodes {
+            let node_name = node
+                .get("node")
+                .and_then(|n| n.as_str())
+                .ok_or_else(|| ProxmoxError::Api("Missing node name".into()))?;
+            match self
+                .get_data(&format!("/api2/json/nodes/{node_name}/disks/list"))
+                .await
+            {
+                Ok(data) => {
+                    if let Some(array) = data.as_array() {
+                        for value in array {
+                            match serde_json::from_value::<NodeDisk>(value.clone()) {
+                                Ok(disk) => disks.push(disk.into_resource(node_name.to_string())),
+                                Err(e) => {
+                                    return Err(ProxmoxError::Api(format!(
+                                        "Failed to parse disk on {node_name}: {e}"
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(ProxmoxError::Api(format!(
+                        "Failed to fetch disks for {node_name}: {e}"
+                    )));
+                }
+            }
+        }
+        Ok(disks)
     }
 
     pub async fn fetch_rrd_data(
@@ -414,6 +516,209 @@ mod tests {
         assert_eq!(resources[0].status, "");
         assert_eq!(resources[1].r#type, "qemu");
         assert_eq!(resources[1].status, "running");
+    }
+
+    #[test]
+    fn test_parse_cluster_tasks() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "upid": "UPID:pve:00123456:00000001:RUNNING:vmstart:100:root@pam:",
+                    "type": "vmstart",
+                    "status": "running",
+                    "starttime": 1700000000,
+                    "endtime": 0,
+                    "node": "pve",
+                    "user": "root@pam"
+                },
+                {
+                    "upid": "UPID:pve:00987654:00000002:OK:vzdump:101:root@pam:",
+                    "type": "vzdump",
+                    "status": "",
+                    "exitstatus": "OK",
+                    "starttime": 1700000100,
+                    "endtime": 1700000200,
+                    "node": "pve",
+                    "user": "root@pam"
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let tasks: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterTask>(v.clone()).unwrap())
+            .map(ClusterTask::into_resource)
+            .collect();
+
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].r#type, "task");
+        assert_eq!(tasks[0].name, "vmstart");
+        assert_eq!(tasks[0].status, "running");
+        assert_eq!(tasks[0].endtime, None);
+        assert_eq!(tasks[1].name, "vzdump");
+        assert_eq!(tasks[1].status, "OK");
+        assert_eq!(tasks[1].endtime, Some(1_700_000_200));
+    }
+
+    #[test]
+    fn test_parse_replication_jobs() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "id": "100-0",
+                    "type": "local",
+                    "guest": "100",
+                    "source": "pve",
+                    "target": "pve2",
+                    "schedule": "*/15",
+                    "disable": 0
+                },
+                {
+                    "id": "101-0",
+                    "type": "local",
+                    "guest": "101",
+                    "source": "pve",
+                    "target": "pve2",
+                    "schedule": "0 2 * * *",
+                    "disable": 1
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let jobs: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterReplication>(v.clone()).unwrap())
+            .map(ClusterReplication::into_resource)
+            .collect();
+
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].r#type, "replication");
+        assert_eq!(jobs[0].name, "[local] 100 -> pve2");
+        assert_eq!(jobs[0].status, "enabled");
+        assert_eq!(jobs[1].status, "disabled");
+        assert_eq!(jobs[1].schedule.as_deref(), Some("0 2 * * *"));
+    }
+
+    #[test]
+    fn test_parse_ha_resources() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "sid": "vm:100",
+                    "type": "vm",
+                    "state": "started",
+                    "node": "pve",
+                    "group": "production",
+                    "max_restart": 1,
+                    "max_relocate": 1
+                },
+                {
+                    "sid": "ct:200",
+                    "type": "ct",
+                    "state": "stopped",
+                    "node": "pve"
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let ha: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterHaResource>(v.clone()).unwrap())
+            .map(ClusterHaResource::into_resource)
+            .collect();
+
+        assert_eq!(ha.len(), 2);
+        assert_eq!(ha[0].r#type, "ha");
+        assert_eq!(ha[0].name, "[vm] vm:100");
+        assert_eq!(ha[0].status, "started");
+        assert_eq!(ha[0].group.as_deref(), Some("production"));
+        assert_eq!(ha[1].status, "stopped");
+        assert_eq!(ha[1].group, None);
+    }
+
+    #[test]
+    fn test_parse_backup_jobs() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "id": "backup-100",
+                    "vmid": "100",
+                    "schedule": "0 2 * * *",
+                    "enabled": 1,
+                    "mode": "stop",
+                    "storage": "local",
+                    "node": "pve"
+                },
+                {
+                    "id": "backup-200",
+                    "vmid": "200",
+                    "schedule": "0 3 * * 0",
+                    "enabled": 0,
+                    "mode": "suspend",
+                    "storage": "local",
+                    "node": "pve"
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let backups: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterBackup>(v.clone()).unwrap())
+            .map(ClusterBackup::into_resource)
+            .collect();
+
+        assert_eq!(backups.len(), 2);
+        assert_eq!(backups[0].r#type, "backup");
+        assert_eq!(backups[0].name, "100");
+        assert_eq!(backups[0].status, "enabled");
+        assert_eq!(backups[1].status, "disabled");
+        assert_eq!(backups[1].storage.as_deref(), Some("local"));
+    }
+
+    #[test]
+    fn test_parse_node_disks() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "devpath": "/dev/sda",
+                    "type": "ssd",
+                    "size": 1000204886016u64,
+                    "model": "Samsung SSD 870",
+                    "health": "PASSED",
+                    "serial": "S123456789",
+                    "wearout": 95
+                },
+                {
+                    "devpath": "/dev/sdb",
+                    "type": "hd",
+                    "size": 4000787030016u64,
+                    "model": "",
+                    "health": "UNKNOWN",
+                    "serial": "",
+                    "wearout": "N/A"
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let disks: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<NodeDisk>(v.clone()).unwrap())
+            .map(|d| d.into_resource("pve".to_string()))
+            .collect();
+
+        assert_eq!(disks.len(), 2);
+        assert_eq!(disks[0].r#type, "disk");
+        assert_eq!(disks[0].name, "[ssd] Samsung SSD 870");
+        assert_eq!(disks[0].node.as_deref(), Some("pve"));
+        assert_eq!(disks[0].status, "PASSED");
+        assert_eq!(disks[0].wearout, Some(95));
+        assert_eq!(disks[1].name, "[hd] /dev/sdb");
+        assert_eq!(disks[1].wearout, None);
     }
 
     #[tokio::test]

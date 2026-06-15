@@ -6,6 +6,13 @@ pub(crate) fn resolve_view(input: &str) -> Option<String> {
         "node" | "nodes" => Some("node".to_string()),
         "ct" | "container" | "containers" | "lxc" => Some("lxc".to_string()),
         "storage" | "storages" => Some("storage".to_string()),
+        "pool" | "pools" => Some("pool".to_string()),
+        "sdn" | "sdns" => Some("sdn".to_string()),
+        "task" | "tasks" => Some("task".to_string()),
+        "replication" | "repl" => Some("replication".to_string()),
+        "ha" => Some("ha".to_string()),
+        "backup" | "backups" => Some("backup".to_string()),
+        "disk" | "disks" => Some("disk".to_string()),
         _ => None,
     }
 }
@@ -24,6 +31,19 @@ pub fn view_completion(input: &str) -> Option<&'static str> {
         "lxc",
         "storage",
         "storages",
+        "pool",
+        "pools",
+        "sdn",
+        "sdns",
+        "task",
+        "tasks",
+        "replication",
+        "repl",
+        "ha",
+        "backup",
+        "backups",
+        "disk",
+        "disks",
     ];
 
     let lower = input.trim().to_lowercase();

@@ -47,10 +47,13 @@ pub fn render_help(frame: &mut Frame, app: &App, theme: &Theme) {
         ("<:lxc>", "Containers"),
         ("<:node>", "Nodes"),
         ("<:storage>", "Storage"),
-        ("<s>", "Start"),
-        ("<S>", "Stop"),
-        ("<r>", "Reboot"),
-        ("<Enter>", "View"),
+        ("<:pool>", "Pools"),
+        ("<:sdn>", "SDN"),
+        ("<:task>", "Tasks"),
+        ("<:replication>", "Replication"),
+        ("<:ha>", "HA"),
+        ("<:backup>", "Backups"),
+        ("<:disk>", "Disks"),
     ];
 
     let general: &[Binding] = &[
@@ -60,6 +63,10 @@ pub fn render_help(frame: &mut Frame, app: &App, theme: &Theme) {
         ("<q>", "Quit"),
         ("<esc>", "Back"),
         ("<ctrl-c>", "Force Quit"),
+        ("<s>", "Start"),
+        ("<S>", "Stop"),
+        ("<r>", "Reboot"),
+        ("<Enter>", "View"),
     ];
 
     let navigation: &[Binding] = &[

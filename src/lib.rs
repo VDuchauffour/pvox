@@ -58,6 +58,21 @@ pub async fn run(config: Config) -> Result<()> {
                         app.connected = true;
                         app.set_resources(resources);
                     }
+                    AppEvent::TaskSnapshot(tasks) => {
+                        app.set_tasks(tasks);
+                    }
+                    AppEvent::ReplicationSnapshot(replication) => {
+                        app.set_replication(replication);
+                    }
+                    AppEvent::HaSnapshot(ha) => {
+                        app.set_ha(ha);
+                    }
+                    AppEvent::BackupSnapshot(backups) => {
+                        app.set_backups(backups);
+                    }
+                    AppEvent::DiskSnapshot(disks) => {
+                        app.set_disks(disks);
+                    }
                     AppEvent::VersionSnapshot(version) => {
                         app.proxmox_version = version;
                     }
@@ -201,6 +216,46 @@ fn spawn_polling_task(
             match client.fetch_resources().await {
                 Ok(resources) => {
                     let _ = tx.send(AppEvent::ClusterSnapshot(resources));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppEvent::ApiError(e.to_string()));
+                }
+            }
+            match client.fetch_cluster_tasks().await {
+                Ok(tasks) => {
+                    let _ = tx.send(AppEvent::TaskSnapshot(tasks));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppEvent::ApiError(e.to_string()));
+                }
+            }
+            match client.fetch_replication().await {
+                Ok(replication) => {
+                    let _ = tx.send(AppEvent::ReplicationSnapshot(replication));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppEvent::ApiError(e.to_string()));
+                }
+            }
+            match client.fetch_ha_resources().await {
+                Ok(ha) => {
+                    let _ = tx.send(AppEvent::HaSnapshot(ha));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppEvent::ApiError(e.to_string()));
+                }
+            }
+            match client.fetch_backups().await {
+                Ok(backups) => {
+                    let _ = tx.send(AppEvent::BackupSnapshot(backups));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppEvent::ApiError(e.to_string()));
+                }
+            }
+            match client.fetch_node_disks().await {
+                Ok(disks) => {
+                    let _ = tx.send(AppEvent::DiskSnapshot(disks));
                 }
                 Err(e) => {
                     let _ = tx.send(AppEvent::ApiError(e.to_string()));
