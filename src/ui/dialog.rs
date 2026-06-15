@@ -1,13 +1,14 @@
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout, Margin},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Sparkline, Wrap},
 };
 
-use super::layout::{centered_rect, command_error_rect};
-use crate::api::ClusterResource;
+use super::header::render_header;
+use super::layout::command_error_rect;
+use super::table::{HEADER_HEIGHT, render_status_bar};
 use crate::app::App;
 use crate::event::ConfirmAction;
 use crate::theme::Theme;
@@ -67,40 +68,51 @@ pub fn render_command_error(frame: &mut Frame, command: &str, theme: &Theme) {
     );
 }
 
-/// Render the resource details modal overlay with sparkline history.
+/// Render the resource details full-frame view with sparkline history.
 pub fn render_details(frame: &mut Frame, app: &App, theme: &Theme) {
-    let area = centered_rect(60, 70, frame.area());
+    let area = frame.area();
+    let body_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height.saturating_sub(1),
+    };
+
+    let [header_area, main_area] =
+        Layout::vertical([Constraint::Length(HEADER_HEIGHT), Constraint::Min(0)]).areas(body_area);
+
+    render_header(frame, app, header_area, theme);
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
         .title(Span::styled(" Resource Details ", theme.accent_bold()))
-        .title_alignment(Alignment::Center);
+        .title_alignment(Alignment::Center)
+        .padding(ratatui::widgets::Padding::new(1, 1, 0, 0));
 
-    let inner = area.inner(Margin::new(1, 1));
-    let chunks = Layout::vertical([Constraint::Min(8), Constraint::Length(6)]).split(inner);
+    let inner = block.inner(main_area);
+    frame.render_widget(block, main_area);
 
-    let content = if let Some(resource) = app.current_resource() {
-        match resource.r#type.as_str() {
-            "qemu" | "lxc" => format_vm_details(resource),
-            "node" => format_node_details(resource),
-            "storage" => format_storage_details(resource),
-            _ => format_generic_details(resource),
-        }
-    } else {
-        "No resource selected".to_string()
-    };
+    let chunks = Layout::vertical([Constraint::Min(8), Constraint::Length(8)]).split(inner);
+
+    let content = app
+        .current_resource()
+        .map(|r| r.format_details())
+        .unwrap_or_else(|| "No resource selected".to_string());
 
     let paragraph = Paragraph::new(content).wrap(Wrap { trim: true });
-    frame.render_widget(Clear, area);
-    frame.render_widget(block.clone(), area);
     frame.render_widget(paragraph, chunks[0]);
 
     let sparkline_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.accent))
         .title(Span::styled(" History ", theme.accent_bold()))
-        .title_alignment(Alignment::Center);
-    let sparkline_inner = chunks[1].inner(Margin::new(1, 1));
+        .title_alignment(Alignment::Center)
+        .padding(ratatui::widgets::Padding::new(1, 1, 0, 0));
+
+    let sparkline_inner = sparkline_block.inner(chunks[1]);
+    frame.render_widget(sparkline_block, chunks[1]);
+
     let sparkline_chunks = Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
         .margin(1)
         .split(sparkline_inner);
@@ -119,53 +131,6 @@ pub fn render_details(frame: &mut Frame, app: &App, theme: &Theme) {
             Paragraph::new("No historical data available.\nReal-time values shown above.");
         frame.render_widget(fallback, sparkline_inner);
     }
-    frame.render_widget(sparkline_block, chunks[1]);
-}
 
-fn format_vm_details(r: &ClusterResource) -> String {
-    let mut s = format!(
-        "Name: {}\nType: {}\nNode: {}\nStatus: {}\n\n",
-        r.name,
-        r.r#type,
-        r.node.as_ref().unwrap_or(&"N/A".to_string()),
-        r.status
-    );
-    if let Some(cpu) = r.cpu {
-        s.push_str(&format!("CPU: {:.1}%\n", cpu * 100.0));
-    }
-    if let (Some(mem), Some(maxmem)) = (r.mem, r.maxmem) {
-        s.push_str(&format!(
-            "Memory: {:.1} / {:.1} GB\n",
-            mem as f64 / 1e9,
-            maxmem as f64 / 1e9
-        ));
-    }
-    s
-}
-
-fn format_node_details(r: &ClusterResource) -> String {
-    format!(
-        "Node: {}\nStatus: {}\nCPU: {:.1}%\nMemory: {:.1} / {:.1} GB\nUptime: {}s",
-        r.name,
-        r.status,
-        r.cpu.unwrap_or(0.0) * 100.0,
-        r.mem.unwrap_or(0) as f64 / 1e9,
-        r.maxmem.unwrap_or(0) as f64 / 1e9,
-        r.uptime.unwrap_or(0)
-    )
-}
-
-fn format_storage_details(r: &ClusterResource) -> String {
-    format!(
-        "Storage: {}\nType: {}\nStatus: {}\nDisk: {} / {} GB",
-        r.name,
-        r.r#type,
-        r.status,
-        r.disk.unwrap_or(0) / (1024 * 1024 * 1024),
-        r.maxdisk.unwrap_or(0) / (1024 * 1024 * 1024)
-    )
-}
-
-fn format_generic_details(r: &ClusterResource) -> String {
-    format!("Name: {}\nType: {}\nStatus: {}", r.name, r.r#type, r.status)
+    render_status_bar(frame, theme);
 }

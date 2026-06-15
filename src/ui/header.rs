@@ -104,7 +104,7 @@ fn render_header_info(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     };
 
     let fields: &[(&str, String)] = &[
-        ("Host:", host.to_string()),
+        ("Endpoint:", host.to_string()),
         ("Cluster:", "Proxmox VE".to_string()),
         ("User:", user.to_string()),
         ("P9S Rev:", env!("CARGO_PKG_VERSION").to_string()),
