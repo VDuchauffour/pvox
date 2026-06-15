@@ -21,6 +21,7 @@ pub struct ClusterResource {
     #[serde(default)]
     pub name: String,
     pub node: Option<String>,
+    #[serde(default)]
     pub status: String,
     pub cpu: Option<f64>,
     pub maxcpu: Option<f64>,

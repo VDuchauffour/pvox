@@ -374,6 +374,48 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_parse_resources_includes_pool_entries() {
+        // Proxmox returns pool resources without a `status` field; they must
+        // not break parsing of the entire cluster/resources response.
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "pool": "production",
+                    "type": "pool",
+                    "id": "/pool/production"
+                },
+                {
+                    "id": "qemu/100",
+                    "type": "qemu",
+                    "name": "web-01",
+                    "node": "pve",
+                    "status": "running",
+                    "cpu": 0.05,
+                    "maxcpu": 2,
+                    "mem": 2147483648u64,
+                    "maxmem": 4294967296u64
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let mut resources: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterResource>(v.clone()).unwrap())
+            .collect();
+        for r in &mut resources {
+            r.normalize();
+        }
+
+        assert_eq!(resources.len(), 2);
+        assert_eq!(resources[0].r#type, "pool");
+        assert_eq!(resources[0].id, "/pool/production");
+        assert_eq!(resources[0].status, "");
+        assert_eq!(resources[1].r#type, "qemu");
+        assert_eq!(resources[1].status, "running");
+    }
+
     #[tokio::test]
     async fn test_connection_refused() {
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
