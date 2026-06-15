@@ -20,7 +20,7 @@
           "type": "string",
           "description": "API token ID (e.g. root@pam!p9s)."
         },
-        "token": {
+        "secret": {
           "type": "string",
           "description": "API token secret."
         },
@@ -49,10 +49,6 @@
       "description": "Data refresh interval in seconds.",
       "minimum": 1,
       "default": 5
-    },
-    "filter": {
-      "type": "string",
-      "description": "Initial resource filter."
     }
   }
 }

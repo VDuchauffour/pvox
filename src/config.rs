@@ -42,7 +42,7 @@ pub struct Cli {
     pub token_id: Option<String>,
 
     #[arg(long, help = "API token secret")]
-    pub token: Option<String>,
+    pub secret: Option<String>,
 
     #[arg(
         long,
@@ -51,15 +51,6 @@ pub struct Cli {
         help = "Allow insecure HTTPS (self-signed certs)"
     )]
     pub insecure: Option<bool>,
-
-    #[arg(long, help = "Data refresh interval in seconds")]
-    pub refresh_interval: Option<u64>,
-
-    #[arg(long, help = "Initial resource filter")]
-    pub filter: Option<String>,
-
-    #[arg(long, value_enum, help = "UI theme")]
-    pub theme: Option<ThemeKind>,
 
     #[arg(long, help = "Path to config file")]
     pub config: Option<PathBuf>,
@@ -75,8 +66,6 @@ struct FileConfig {
     ui: UiSection,
     #[serde(default)]
     refresh_interval: Option<u64>,
-    #[serde(default)]
-    filter: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -86,7 +75,7 @@ struct ConnectionSection {
     #[serde(default)]
     token_id: Option<String>,
     #[serde(default)]
-    token: Option<String>,
+    secret: Option<String>,
     #[serde(default)]
     insecure: Option<bool>,
 }
@@ -102,10 +91,9 @@ struct UiSection {
 pub struct Config {
     pub host: Option<String>,
     pub token_id: Option<String>,
-    pub token: Option<String>,
+    pub secret: Option<String>,
     pub insecure: bool,
     pub refresh_interval: u64,
-    pub filter: Option<String>,
     pub theme: ThemeKind,
 }
 
@@ -114,10 +102,9 @@ impl Default for Config {
         Self {
             host: None,
             token_id: None,
-            token: None,
+            secret: None,
             insecure: false,
             refresh_interval: default_refresh_interval(),
-            filter: None,
             theme: ThemeKind::Default,
         }
     }
@@ -191,16 +178,14 @@ impl Cli {
             connection,
             ui,
             refresh_interval,
-            filter,
         } = read_file_config(self.config.as_deref())?;
 
         let mut cfg = Config {
             host: connection.host,
             token_id: connection.token_id,
-            token: connection.token,
+            secret: connection.secret,
             insecure: connection.insecure.unwrap_or(false),
             refresh_interval: refresh_interval.unwrap_or_else(default_refresh_interval),
-            filter,
             theme: ui.theme.unwrap_or_default(),
         };
 
@@ -211,20 +196,11 @@ impl Cli {
         if self.token_id.is_some() {
             cfg.token_id = self.token_id;
         }
-        if self.token.is_some() {
-            cfg.token = self.token;
+        if self.secret.is_some() {
+            cfg.secret = self.secret;
         }
         if let Some(insecure) = self.insecure {
             cfg.insecure = insecure;
-        }
-        if let Some(refresh_interval) = self.refresh_interval {
-            cfg.refresh_interval = refresh_interval;
-        }
-        if self.filter.is_some() {
-            cfg.filter = self.filter;
-        }
-        if let Some(theme) = self.theme {
-            cfg.theme = theme;
         }
 
         Ok(cfg)
@@ -241,11 +217,8 @@ mod tests {
         Cli {
             host: None,
             token_id: None,
-            token: None,
+            secret: None,
             insecure: None,
-            refresh_interval: None,
-            filter: None,
-            theme: None,
             config: Some(config),
         }
     }
@@ -256,7 +229,7 @@ mod tests {
 connection:
   host: https://pve.example.com
   token_id: root@pam!p9s
-  token: secret123
+  secret: secret123
   insecure: true
 ui:
   theme: no-color
@@ -266,7 +239,7 @@ refresh_interval: 10
         let conn = file.connection;
         assert_eq!(conn.host, Some("https://pve.example.com".to_string()));
         assert_eq!(conn.token_id, Some("root@pam!p9s".to_string()));
-        assert_eq!(conn.token, Some("secret123".to_string()));
+        assert_eq!(conn.secret, Some("secret123".to_string()));
         assert_eq!(conn.insecure, Some(true));
         assert_eq!(file.ui.theme, Some(ThemeKind::NoColor));
         assert_eq!(file.refresh_interval, Some(10));

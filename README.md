@@ -25,12 +25,11 @@ p9s reads `~/.config/p9s/config.yaml`. CLI flags override file values:
 connection:
   host: https://pve.local
   token_id: root@pam!p9s
-  token: abc123
+  secret: abc123
   insecure: true
 ui:
   theme: default
 refresh_interval: 5
-filter: ""
 ```
 
 ### CLI Flags
@@ -39,15 +38,12 @@ filter: ""
 Usage: p9s [OPTIONS]
 
 Options:
-      --host <HOST>                          Proxmox host URL
-      --token-id <TOKEN_ID>                  API token ID (e.g. root@pam!p9s)
-      --token <TOKEN>                        API token secret
-      --insecure [<INSECURE>]                Allow insecure HTTPS (self-signed certs) [possible values: true, false]
-      --refresh-interval <REFRESH_INTERVAL>  Data refresh interval in seconds [default: 5]
-      --filter <FILTER>                      Initial resource filter
-      --theme <THEME>                        UI theme [possible values: default, no-color]
-      --config <CONFIG>                      Path to config file
-  -h, --help                                 Print help
+      --host <HOST>          Proxmox host URL
+      --token-id <TOKEN_ID>  API token ID (e.g. root@pam!p9s)
+      --secret <SECRET>        API token secret
+      --insecure [<INSECURE>]  Allow insecure HTTPS (self-signed certs) [possible values: true, false]
+      --config <CONFIG>      Path to config file
+  -h, --help                 Print help
 
 
 ```

@@ -34,24 +34,23 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> anyhow::Result<Self> {
-        let client = if let (Some(host), Some(token_id), Some(token)) =
-            (&config.host, &config.token_id, &config.token)
+        let client = if let (Some(host), Some(token_id), Some(secret)) =
+            (&config.host, &config.token_id, &config.secret)
         {
             Some(Arc::new(crate::api::ProxmoxClient::new(
                 host,
                 token_id,
-                token,
+                secret,
                 config.insecure,
             )?))
         } else {
             None
         };
 
-        let filter = config.filter.clone().unwrap_or_default();
         let mut app = Self {
             resources: Vec::new(),
             selected_index: 0,
-            filter,
+            filter: String::new(),
             command: String::new(),
             view: "qemu".to_string(),
             display_resources: Vec::new(),
