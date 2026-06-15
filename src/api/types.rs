@@ -263,7 +263,11 @@ impl ClusterBackup {
         ClusterResource {
             id: self.id.clone(),
             r#type: "backup".to_string(),
-            name: format!("[{}] {}", self.r#type, self.vmid),
+            name: match (self.r#type.is_empty(), self.vmid.is_empty()) {
+                (true, true) => "all".to_string(),
+                (true, false) => self.vmid.clone(),
+                (false, _) => format!("[{}] {}", self.r#type, self.vmid),
+            },
             node: if self.node.is_empty() {
                 None
             } else {
