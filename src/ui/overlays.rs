@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -9,26 +9,34 @@ use ratatui::{
 use crate::app::{App, view_completion};
 use crate::theme::Theme;
 
-/// Render the filter input bar at the bottom of the list view.
 pub fn render_filter(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let line = Line::from(vec![
-        Span::styled(" / ", theme.prompt()),
+        Span::styled(
+            " / ",
+            Style::default()
+                .fg(theme.success)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(app.filter.clone()),
     ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent));
+        .border_style(Style::default().fg(theme.success));
 
     frame.render_widget(Paragraph::new(line).block(block), area);
 }
 
-/// Render the command input bar at the bottom of the list view, with tab-completion hint.
 pub fn render_command(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let no_color = app.config.no_color();
 
     let mut spans = vec![
-        Span::styled(" > ", theme.prompt()),
+        Span::styled(
+            " > ",
+            Style::default()
+                .fg(theme.success)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(app.command.clone()),
     ];
 
@@ -45,7 +53,7 @@ pub fn render_command(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent));
+        .border_style(Style::default().fg(theme.success));
 
     frame.render_widget(Paragraph::new(line).block(block), area);
 }

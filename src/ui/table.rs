@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Row, Table, TableState},
+    widgets::{Block, Borders, Cell, Padding, Row, Table, TableState},
 };
 
 use super::format::{format_disk, format_memory, view_label};
@@ -31,20 +31,6 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
         Layout::vertical([Constraint::Length(HEADER_HEIGHT), Constraint::Min(0)]).areas(body_area);
 
     render_header(frame, app, header_area, theme);
-
-    let table_area = if matches!(app.modal, Some(Modal::Filter)) {
-        let [filter_area, rest] =
-            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(main_area);
-        render_filter(frame, app, filter_area, theme);
-        rest
-    } else if matches!(app.modal, Some(Modal::Command)) {
-        let [command_area, rest] =
-            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(main_area);
-        render_command(frame, app, command_area, theme);
-        rest
-    } else {
-        main_area
-    };
 
     let widths = [
         Constraint::Min(15), // Name
@@ -109,6 +95,26 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
         ])
     };
 
+    let highlight_style = if no_color {
+        Style::default().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default().fg(Color::Black).bg(theme.accent)
+    };
+
+    let table_area = if matches!(app.modal, Some(Modal::Filter)) {
+        let [prompt_area, rest] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(main_area);
+        render_filter(frame, app, prompt_area, theme);
+        rest
+    } else if matches!(app.modal, Some(Modal::Command)) {
+        let [prompt_area, rest] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(main_area);
+        render_command(frame, app, prompt_area, theme);
+        rest
+    } else {
+        main_area
+    };
+
     let table = Table::new(rows, widths)
         .header(header)
         .block(
@@ -117,18 +123,9 @@ pub fn render_list(frame: &mut Frame, app: &App, theme: &Theme) {
                 .border_style(Style::default().fg(theme.accent))
                 .title(title)
                 .title_alignment(ratatui::layout::Alignment::Center)
-                .padding(ratatui::widgets::Padding::new(1, 1, 0, 0)),
+                .padding(Padding::new(1, 1, 0, 0)),
         )
-        .row_highlight_style(if no_color {
-            Style::default().add_modifier(Modifier::REVERSED)
-        } else {
-            Style::default().fg(Color::Black).bg(theme.accent)
-        });
-
-    let table_area = table_area.inner(ratatui::layout::Margin {
-        vertical: 1,
-        horizontal: 0,
-    });
+        .row_highlight_style(highlight_style);
 
     frame.render_stateful_widget(table, table_area, &mut table_state);
 
