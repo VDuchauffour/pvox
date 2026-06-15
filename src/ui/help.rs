@@ -43,8 +43,8 @@ pub fn render_help(frame: &mut Frame, app: &App, theme: &Theme) {
     frame.render_widget(block, main_area);
 
     let resource: &[Binding] = &[
-        ("<:qemu>", "VMs"),
-        ("<:lxc>", "Containers"),
+        ("<:vm>", "VMs"),
+        ("<:container>", "Containers"),
         ("<:node>", "Nodes"),
         ("<:storage>", "Storage"),
         ("<:pool>", "Pools"),
