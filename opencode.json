@@ -1,0 +1,16 @@
+{
+  "instructions": "AGENTS.md",
+  "skills": [
+    "review-work",
+    "debugging",
+    "security-research",
+    "visual-qa",
+    "remove-ai-slops",
+    "git-master"
+  ],
+  "user_skills": [
+    ".agents/skills/proxmox-ratatui.md",
+    ".agents/skills/rust-ci.md",
+    ".agents/skills/testing-patterns.md"
+  ]
+}
