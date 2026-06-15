@@ -15,6 +15,7 @@ use crate::config::Config;
 pub struct App {
     pub resources: Vec<ClusterResource>,
     pub tasks: Vec<ClusterResource>,
+    pub replication: Vec<ClusterResource>,
     pub selected_index: usize,
     pub filter: String,
     pub command: String,
@@ -51,6 +52,7 @@ impl App {
         let mut app = Self {
             resources: Vec::new(),
             tasks: Vec::new(),
+            replication: Vec::new(),
             selected_index: 0,
             filter: String::new(),
             command: String::new(),
@@ -91,10 +93,10 @@ impl App {
 
     pub fn update_display_resources(&mut self) {
         let f = self.filter.to_lowercase();
-        let source = if self.view == "task" {
-            &self.tasks
-        } else {
-            &self.resources
+        let source = match self.view.as_str() {
+            "task" => &self.tasks,
+            "replication" => &self.replication,
+            _ => &self.resources,
         };
         self.display_resources = source
             .iter()
@@ -140,6 +142,14 @@ impl App {
             .selected_index
             .min(self.display_resources.len().saturating_sub(1));
     }
+
+    pub fn set_replication(&mut self, replication: Vec<ClusterResource>) {
+        self.replication = replication;
+        self.update_display_resources();
+        self.selected_index = self
+            .selected_index
+            .min(self.display_resources.len().saturating_sub(1));
+    }
 }
 
 #[cfg(test)]
@@ -168,6 +178,9 @@ mod tests {
             starttime: None,
             endtime: None,
             user: None,
+            schedule: None,
+            target: None,
+            disable: None,
         }
     }
 
@@ -281,12 +294,47 @@ mod tests {
             starttime: Some(1_700_000_000),
             endtime: None,
             user: Some("root@pam".to_string()),
+            schedule: None,
+            target: None,
+            disable: None,
         }]);
 
         app.view = "task".to_string();
         app.update_display_resources();
         assert_eq!(app.filtered_resources().len(), 1);
         assert_eq!(app.filtered_resources()[0].r#type, "task");
+    }
+
+    #[test]
+    fn test_view_switch_to_replication() {
+        let config = mock_config();
+        let mut app = App::new(config).unwrap();
+        app.set_resources(vec![mock_resource("vm1", "qemu", Some("pve1"))]);
+        app.set_replication(vec![ClusterResource {
+            id: "100-0".to_string(),
+            r#type: "replication".to_string(),
+            name: "[local] 100 -> pve2".to_string(),
+            node: Some("pve".to_string()),
+            status: "enabled".to_string(),
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: Some("*/15".to_string()),
+            target: Some("pve2".to_string()),
+            disable: Some(false),
+        }]);
+
+        app.view = "replication".to_string();
+        app.update_display_resources();
+        assert_eq!(app.filtered_resources().len(), 1);
+        assert_eq!(app.filtered_resources()[0].r#type, "replication");
     }
 
     #[test]
@@ -1021,6 +1069,8 @@ mod tests {
         assert_eq!(resolve_view("sdns"), Some("sdn".to_string()));
         assert_eq!(resolve_view("task"), Some("task".to_string()));
         assert_eq!(resolve_view("tasks"), Some("task".to_string()));
+        assert_eq!(resolve_view("replication"), Some("replication".to_string()));
+        assert_eq!(resolve_view("repl"), Some("replication".to_string()));
         assert_eq!(resolve_view(""), None);
         assert_eq!(resolve_view("unknown"), None);
     }
@@ -1090,6 +1140,7 @@ mod tests {
         assert_eq!(view_completion("po"), Some("ol"));
         assert_eq!(view_completion("sd"), Some("n"));
         assert_eq!(view_completion("ta"), Some("sk"));
+        assert_eq!(view_completion("re"), Some("plication"));
     }
 
     #[test]

@@ -36,6 +36,12 @@ pub struct ClusterResource {
     pub endtime: Option<u64>,
     #[serde(default)]
     pub user: Option<String>,
+    #[serde(default)]
+    pub schedule: Option<String>,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub disable: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -81,6 +87,55 @@ impl ClusterTask {
                 Some(self.endtime)
             },
             user: Some(self.user),
+            schedule: None,
+            target: None,
+            disable: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ClusterReplication {
+    pub id: String,
+    #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
+    pub guest: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub target: String,
+    #[serde(default)]
+    pub schedule: String,
+    #[serde(default)]
+    pub disable: bool,
+}
+
+impl ClusterReplication {
+    pub fn into_resource(self) -> ClusterResource {
+        ClusterResource {
+            id: self.id.clone(),
+            r#type: "replication".to_string(),
+            name: format!("[{}] {} -> {}", self.r#type, self.guest, self.target),
+            node: Some(self.source.clone()),
+            status: if self.disable {
+                "disabled".to_string()
+            } else {
+                "enabled".to_string()
+            },
+            cpu: None,
+            maxcpu: None,
+            mem: None,
+            maxmem: None,
+            disk: None,
+            maxdisk: None,
+            uptime: None,
+            starttime: None,
+            endtime: None,
+            user: None,
+            schedule: Some(self.schedule),
+            target: Some(self.target),
+            disable: Some(self.disable),
         }
     }
 }
@@ -100,6 +155,7 @@ impl ClusterResource {
             "node" => self.format_node_details(),
             "storage" => self.format_storage_details(),
             "task" => self.format_task_details(),
+            "replication" => self.format_replication_details(),
             _ => self.format_generic_details(),
         }
     }
@@ -170,6 +226,22 @@ impl ClusterResource {
         }
         if let Some(end) = self.endtime {
             s.push_str(&format!("\nEnded: {end}"));
+        }
+        s
+    }
+
+    fn format_replication_details(&self) -> String {
+        let mut s = format!(
+            "Replication: {}\nNode: {}\nStatus: {}",
+            self.name,
+            self.node.as_ref().unwrap_or(&"N/A".to_string()),
+            self.status
+        );
+        if let Some(target) = &self.target {
+            s.push_str(&format!("\nTarget: {target}"));
+        }
+        if let Some(schedule) = &self.schedule {
+            s.push_str(&format!("\nSchedule: {schedule}"));
         }
         s
     }

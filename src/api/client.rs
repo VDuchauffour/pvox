@@ -1,7 +1,9 @@
 use reqwest::Client;
 
 use super::error::ProxmoxError;
-use super::types::{ClusterResource, ClusterTask, PveVersion, RrdDataPoint, TaskStatus, WhoAmI};
+use super::types::{
+    ClusterReplication, ClusterResource, ClusterTask, PveVersion, RrdDataPoint, TaskStatus, WhoAmI,
+};
 
 pub struct ProxmoxClient {
     client: Client,
@@ -58,6 +60,21 @@ impl ProxmoxClient {
             .map_err(|e| ProxmoxError::Api(format!("Failed to parse task: {e}")))?
             .into_iter()
             .map(ClusterTask::into_resource)
+            .collect())
+    }
+
+    pub async fn fetch_replication(&self) -> Result<Vec<ClusterResource>, ProxmoxError> {
+        let data = self.get_data("/api2/json/cluster/replication").await?;
+        let array = data
+            .as_array()
+            .ok_or_else(|| ProxmoxError::Api("Expected array response".into()))?;
+        Ok(array
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterReplication>(v.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ProxmoxError::Api(format!("Failed to parse replication: {e}")))?
+            .into_iter()
+            .map(ClusterReplication::into_resource)
             .collect())
     }
 
@@ -472,6 +489,46 @@ mod tests {
         assert_eq!(tasks[1].name, "vzdump");
         assert_eq!(tasks[1].status, "OK");
         assert_eq!(tasks[1].endtime, Some(1_700_000_200));
+    }
+
+    #[test]
+    fn test_parse_replication_jobs() {
+        let json = serde_json::json!({
+            "data": [
+                {
+                    "id": "100-0",
+                    "type": "local",
+                    "guest": "100",
+                    "source": "pve",
+                    "target": "pve2",
+                    "schedule": "*/15",
+                    "disable": false
+                },
+                {
+                    "id": "101-0",
+                    "type": "local",
+                    "guest": "101",
+                    "source": "pve",
+                    "target": "pve2",
+                    "schedule": "0 2 * * *",
+                    "disable": true
+                }
+            ]
+        });
+
+        let data = json.get("data").and_then(|d| d.as_array()).unwrap();
+        let jobs: Vec<ClusterResource> = data
+            .iter()
+            .map(|v| serde_json::from_value::<ClusterReplication>(v.clone()).unwrap())
+            .map(ClusterReplication::into_resource)
+            .collect();
+
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].r#type, "replication");
+        assert_eq!(jobs[0].name, "[local] 100 -> pve2");
+        assert_eq!(jobs[0].status, "enabled");
+        assert_eq!(jobs[1].status, "disabled");
+        assert_eq!(jobs[1].schedule.as_deref(), Some("0 2 * * *"));
     }
 
     #[tokio::test]
