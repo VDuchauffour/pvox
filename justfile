@@ -50,5 +50,5 @@ clean:
 update:
     cargo update
 
-setup-proxmox:
-    uv run scripts/setup-proxmox.py
+up:
+    docker compose up
