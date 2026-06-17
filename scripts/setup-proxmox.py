@@ -365,7 +365,9 @@ class ProxmoxSeeder:
         except Exception as e:
             print(f"  Could not list containers: {e}")
         try:
-            self.existing["pools"] = {pool.get("poolid") for pool in self.pve.pools.get()}
+            self.existing["pools"] = {
+                pool.get("poolid") for pool in self.pve.pools.get()
+            }
         except Exception as e:
             print(f"  Could not list pools: {e}")
         try:
@@ -472,7 +474,7 @@ class ProxmoxSeeder:
     def assign_pools(self) -> None:
         pool_assignments = {
             "production": self.POOL_VM_ASSIGNMENTS["production"]
-            + [ct["vmid"] for ct in self.created_cts if ct["vmid"] <= 203],  # ty:ignore[unsupported-operator]
+            + [ct["vmid"] for ct in self.created_cts if ct["vmid"] <= 203],
             "staging": self.POOL_VM_ASSIGNMENTS["staging"]
             + [ct["vmid"] for ct in self.created_cts if ct["vmid"] == 204],
             "development": self.POOL_VM_ASSIGNMENTS["development"]
