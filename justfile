@@ -51,4 +51,4 @@ update:
     cargo update
 
 setup-proxmox:
-    uv run --with proxmoxer  scripts/setup-proxmox.py
+    uv run scripts/setup-proxmox.py
