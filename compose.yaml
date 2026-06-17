@@ -10,14 +10,6 @@ services:
     restart: always
     privileged: true
     stop_grace_period: 2m
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - curl -kfsS https://localhost:8006/api2/json/version >/dev/null || exit 1
-      interval: 15s
-      timeout: 10s
-      start_period: 60s
-      retries: 20
 
   setup:
     image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
