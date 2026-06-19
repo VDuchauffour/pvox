@@ -412,8 +412,8 @@ def print_summary(created_vms, vms, created_cts, containers, pools, snapshots, c
     print(f"  Backups:      {len(created_backups)}")
     print(f"  Disks:        {len(disks)}")
     print(f"  Running:      {len(running_vms)} VMs started")
-    print("\nYou can now connect with p9s:")
-    print("  p9s --endpoint https://127.0.0.1:8006 --insecure")
+    print("\nYou can now connect with pvox:")
+    print("  pvox --endpoint https://127.0.0.1:8006 --insecure")
     print("=" * 60)
 
 

@@ -2,7 +2,7 @@
 
 ## Project
 
-- **p9s** — a k9s-like terminal UI for Proxmox VE clusters, written in Rust (edition 2024).
+- **pvox** — a k9s-like terminal UI for Proxmox VE clusters, written in Rust (edition 2024).
 - Single binary, no workspace. Entrypoint: `src/main.rs` (tokio async), core loop in `src/lib.rs`.
 
 ## Build & Run
@@ -31,7 +31,7 @@
 - `src/config.rs` — CLI args (`clap`) + YAML file config. CLI overrides file values. Validates against embedded JSON schema.
 - `src/event.rs` — Event types (`AppEvent`, `LifecycleAction`, `ConfirmAction`).
 - `src/theme.rs` — Color theming (supports `--no-color` via `ThemeKind`).
-- Config file: `~/.config/p9s/config.yaml`. Schema: `schema/config.schema.json` (embedded in binary and validated at load time).
+- Config file: `~/.config/pvox/config.yaml`. Schema: `schema/config.schema.json` (embedded in binary and validated at load time).
 
 ## Key Conventions
 

@@ -33,12 +33,12 @@ pub enum ThemeKind {
 /// Command-line arguments. Flat by design; values provided here take
 /// precedence over the config file.
 #[derive(Debug, Parser)]
-#[command(name = "p9s", about = "A k9s-like terminal UI for Proxmox VE", styles = cargo_styles())]
+#[command(name = "pvox", about = "A k9s-like terminal UI for Proxmox VE", styles = cargo_styles())]
 pub struct Cli {
     #[arg(long, help = "Proxmox endpoint URL")]
     pub endpoint: Option<String>,
 
-    #[arg(long, help = "API token ID (e.g. root@pam!p9s)")]
+    #[arg(long, help = "API token ID (e.g. root@pam!pvox)")]
     pub token_id: Option<String>,
 
     #[arg(long, help = "API token secret")]
@@ -124,7 +124,7 @@ fn default_refresh_interval() -> u64 {
 fn default_config_path() -> Option<PathBuf> {
     std::env::var("HOME")
         .ok()
-        .map(|home| PathBuf::from(home).join(".config/p9s/config.yaml"))
+        .map(|home| PathBuf::from(home).join(".config/pvox/config.yaml"))
 }
 
 const CONFIG_SCHEMA: &str = include_str!("../schema/config.schema.json");
@@ -228,7 +228,7 @@ mod tests {
         let yaml = r#"
 connection:
   endpoint: https://pve.example.com
-  token_id: root@pam!p9s
+  token_id: root@pam!pvox
   secret: secret123
   insecure: true
 ui:
@@ -238,7 +238,7 @@ refresh_interval: 10
         let file: FileConfig = serde_yaml::from_str(yaml).unwrap();
         let conn = file.connection;
         assert_eq!(conn.endpoint, Some("https://pve.example.com".to_string()));
-        assert_eq!(conn.token_id, Some("root@pam!p9s".to_string()));
+        assert_eq!(conn.token_id, Some("root@pam!pvox".to_string()));
         assert_eq!(conn.secret, Some("secret123".to_string()));
         assert_eq!(conn.insecure, Some(true));
         assert_eq!(file.ui.theme, Some(ThemeKind::NoColor));
@@ -317,7 +317,7 @@ refresh_interval: 10
 
     #[test]
     fn test_missing_file_uses_defaults() {
-        let args = cli_with_config(PathBuf::from("/nonexistent/p9s/config.yaml"));
+        let args = cli_with_config(PathBuf::from("/nonexistent/pvox/config.yaml"));
 
         let cfg = args.load().unwrap();
         assert_eq!(cfg.endpoint, None);

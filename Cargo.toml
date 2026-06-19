@@ -1,5 +1,5 @@
 [package]
-name = "p9s"
+name = "pvox"
 version = "0.0.2"
 edition = "2024"
 description = "A k9s-like terminal UI for Proxmox VE"
