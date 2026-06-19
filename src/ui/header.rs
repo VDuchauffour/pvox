@@ -9,23 +9,15 @@ use ratatui::{
 use crate::app::{App, Modal};
 use crate::theme::Theme;
 
-/// Proxmox logo pixel art (2-row half-block encoding).
-/// 'o' = primary color, 'd' = secondary color, '.' = empty.
-const PROXMOX_PIXELS: [&str; 14] = [
-    "...ddd....ddd...",
-    "...dddd..dddd...",
-    "ooo.dddddddd.ooo",
-    ".ooo.dddddd.ooo.",
-    "..ooo.dddd.ooo..",
-    "...ooo.dd.ooo...",
-    "....ooo..ooo....",
-    "....ooo..ooo....",
-    "...ooo.dd.ooo...",
-    "..ooo.dddd.ooo..",
-    ".ooo.dddddd.ooo.",
-    "ooo.dddddddd.ooo",
-    "...dddd..dddd...",
-    "...ddd....ddd...",
+/// PVOX wordmark banner rendered as the header icon.
+/// `█` glyphs use the primary color; box-drawing shadow glyphs use the secondary color.
+const PVOX_BANNER: [&str; 6] = [
+    "██████╗ ██╗   ██╗ ██████╗ ██╗  ██╗",
+    "██╔══██╗██║   ██║██╔═══██╗╚██╗██╔╝",
+    "██████╔╝██║   ██║██║   ██║ ╚███╔╝ ",
+    "██╔═══╝ ╚██╗ ██╔╝██║   ██║ ██╔██╗ ",
+    "██║      ╚████╔╝ ╚██████╔╝██╔╝ ██╗",
+    "╚═╝       ╚═══╝   ╚═════╝ ╚═╝  ╚═╝",
 ];
 
 /// Left offset matching the table's border + padding (1 + 1).
@@ -107,7 +99,7 @@ fn render_header_info(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
         ("Endpoint:", endpoint.to_string()),
         ("Cluster:", "Proxmox VE".to_string()),
         ("User:", user.to_string()),
-        ("P9S Rev:", env!("CARGO_PKG_VERSION").to_string()),
+        ("PVOX Rev:", env!("CARGO_PKG_VERSION").to_string()),
         (
             "PVE Rev:",
             if app.proxmox_version.is_empty() {
@@ -224,34 +216,22 @@ fn render_header_keys(frame: &mut Frame, area: Rect, theme: &Theme) {
 fn render_header_logo(frame: &mut Frame, app: &App, area: Rect, theme: &Theme) {
     let no_color = app.config.no_color();
 
-    let pixel = |c: char| -> Option<Color> {
-        match c {
-            'o' => Some(theme.logo_primary),
-            'd' => Some(theme.logo_secondary),
-            _ => None,
+    let glyph = |c: char| -> Span {
+        if no_color {
+            Span::raw(c.to_string())
+        } else if c == '█' {
+            Span::styled(c.to_string(), Style::default().fg(theme.logo_primary))
+        } else {
+            Span::styled(c.to_string(), Style::default().fg(theme.logo_secondary))
         }
     };
 
-    let logo_lines: Vec<Line> = PROXMOX_PIXELS
-        .chunks(2)
-        .map(|pair| {
-            let top: Vec<char> = pair[0].chars().collect();
-            let bottom: Vec<char> = pair[1].chars().collect();
-            let spans = (0..top.len())
-                .map(|x| {
-                    let t = pixel(top[x]);
-                    let b = pixel(*bottom.get(x).unwrap_or(&'.'));
-                    match (t, b) {
-                        (None, None) => Span::raw(" "),
-                        (Some(tc), None) => Span::styled("▀", Style::default().fg(tc)),
-                        (None, Some(bc)) => Span::styled("▄", Style::default().fg(bc)),
-                        (Some(_), Some(_)) if no_color => Span::raw("█"),
-                        (Some(tc), Some(bc)) => Span::styled("▀", Style::default().fg(tc).bg(bc)),
-                    }
-                })
-                .collect::<Vec<_>>();
-            Line::from(spans)
-        })
+    let logo_lines: Vec<Line> = std::iter::once(Line::default())
+        .chain(
+            PVOX_BANNER
+                .iter()
+                .map(|row| Line::from(row.chars().map(glyph).collect::<Vec<_>>())),
+        )
         .collect();
 
     frame.render_widget(Paragraph::new(logo_lines).alignment(Alignment::Right), area);

@@ -1,4 +1,4 @@
-# p9s
+# pvox
 
 A k9s-like terminal UI for Proxmox VE clusters.
 
@@ -14,17 +14,17 @@ A k9s-like terminal UI for Proxmox VE clusters.
 ## Install
 
 ```bash
-cargo install p9s
+cargo install pvox
 ```
 
 ## Configuration
 
-p9s reads `~/.config/p9s/config.yaml`. CLI flags override file values:
+pvox reads `~/.config/pvox/config.yaml`. CLI flags override file values:
 
 ```yaml
 connection:
   endpoint: https://pve.local
-  token_id: root@pam!p9s
+  token_id: root@pam!pvox
   secret: abc123
   insecure: true
 ui:
@@ -35,11 +35,11 @@ refresh_interval: 5
 ### CLI Flags
 
 ```
-Usage: p9s [OPTIONS]
+Usage: pvox [OPTIONS]
 
 Options:
       --endpoint <ENDPOINT>  Proxmox endpoint URL
-      --token-id <TOKEN_ID>  API token ID (e.g. root@pam!p9s)
+      --token-id <TOKEN_ID>  API token ID (e.g. root@pam!pvox)
       --secret <SECRET>        API token secret
       --insecure [<INSECURE>]  Allow insecure HTTPS (self-signed certs) [possible values: true, false]
       --config <CONFIG>      Path to config file
