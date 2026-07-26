@@ -25,6 +25,9 @@ services:
       PROXMOX_PASSWORD: root
       PROXMOX_NODE: pve
       UV_PROJECT_ENVIRONMENT: /opt/venv
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-},proxmox
     volumes:
       - ./pyproject.toml:/app/pyproject.toml:ro
       - ./uv.lock:/app/uv.lock:ro
