@@ -54,8 +54,8 @@ clean:
 update:
     cargo update
 
-up:
-    docker compose up
+up *args:
+    docker compose up {{ args }}
 
 down:
     docker compose down
