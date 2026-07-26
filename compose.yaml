@@ -7,9 +7,34 @@ services:
       PASSWORD: root
     ports:
       - 8006:8006
-    volumes:
-      - ./.docker/storage:/var/lib/vz
-      - ./.docker/config:/var/lib/pve-cluster
     restart: always
     privileged: true
     stop_grace_period: 2m
+
+  setup:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    container_name: proxmox-setup
+    depends_on:
+      proxmox:
+        condition: service_started
+    working_dir: /app
+    environment:
+      PROXMOX_HOST: proxmox
+      PROXMOX_PORT: '8006'
+      PROXMOX_USER: root@pam
+      PROXMOX_PASSWORD: root
+      PROXMOX_NODE: pve
+      UV_PROJECT_ENVIRONMENT: /opt/venv
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-},proxmox
+    volumes:
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./uv.lock:/app/uv.lock:ro
+      - ./scripts:/app/scripts:ro
+    command:
+      - uv
+      - run
+      - --no-dev
+      - scripts/setup-proxmox.py
+    restart: 'no'
