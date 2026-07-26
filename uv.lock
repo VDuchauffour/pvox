@@ -110,7 +110,7 @@ wheels = [
 ]
 
 [[package]]
-name = "p9s-dev"
+name = "pvox-dev"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [

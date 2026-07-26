@@ -1,7 +1,7 @@
 [project]
-name = "p9s-dev"
+name = "pvox-dev"
 version = "0.0.0"
-description = "Dev tooling for p9s (Proxmox VE setup scripts)"
+description = "Dev tooling for pvox (Proxmox VE setup scripts)"
 requires-python = ">=3.11"
 dependencies = ["proxmoxer>=2.0", "requests>=2.34.2"]
 

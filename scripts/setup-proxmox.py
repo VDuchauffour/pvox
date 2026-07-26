@@ -615,8 +615,8 @@ class ProxmoxSeeder:
         print(f"  Backups:      {len(self.created_backups)}")
         print(f"  Disks:        {len(self.disks)}")
         print(f"  Running:      {len(self.RUNNING_VMS)} VMs started")
-        print("\nYou can now connect with p9s:")
-        print("  p9s --endpoint https://127.0.0.1:8006 --insecure")
+        print("\nYou can now connect with pvox:")
+        print("  pvox --endpoint https://127.0.0.1:8006 --insecure")
         print("=" * 60)
 
     def run(self) -> None:
